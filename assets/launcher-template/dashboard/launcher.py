@@ -197,7 +197,9 @@ class ServiceManager:
             "shell": isinstance(command, str),
         }
         if os.name == "nt":
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            kwargs["creationflags"] = (
+                subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            )
         else:
             kwargs["start_new_session"] = True
         process = subprocess.Popen(command, **kwargs)

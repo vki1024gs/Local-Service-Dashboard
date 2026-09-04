@@ -10,7 +10,8 @@ launcher/
 ├── ARCHITECTURE.md              # structure, boundaries, and data flow
 ├── README.md                    # user-facing launch instructions
 ├── launch-dashboard.command     # macOS user entrypoint
-├── launch-dashboard.bat         # Windows user entrypoint
+├── launch-dashboard.bat         # Windows compatibility entrypoint
+├── launch-dashboard.vbs         # Windows console-free user entrypoint
 ├── launcher-skill -> ...        # link/pointer to the installed reusable Skill
 ├── projects/                    # links to explicitly registered projects
 └── dashboard/                   # organized implementation directory
@@ -56,7 +57,7 @@ Keep every directory and file name in English. Use lowercase kebab-case for proj
 
 The registrar tries a relative directory symlink first. On Windows it falls back to a directory junction, then to `<project-ref>.path.json` if links are unavailable. It never copies or hard-links the project. The service descriptor stores only `project_ref`; never store the original absolute project path in `launcher.config.json`.
 
-Optional GUI launch wrappers belong under `dashboard/entrypoints/`, not under service `adapters/`. They must locate the instance relative to their own bundle or executable and must not embed registered project paths. Keep the fixed English `.command` and `.bat` launch files as portable fallback entrypoints.
+Optional GUI launch wrappers belong under `dashboard/entrypoints/`, not under service `adapters/`. They must locate the instance relative to their own bundle or executable and must not embed registered project paths. Keep the fixed English `.command`, `.bat`, and `.vbs` launch files as portable entrypoints. On Windows, use `.vbs` for a console-free launch; `.bat` delegates to it for compatibility.
 
 ## Source-of-truth rules
 
