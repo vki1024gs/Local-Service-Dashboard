@@ -37,7 +37,9 @@ def main() -> int:
     skill_link = destination / "launcher-skill"
     try:
         os.symlink(os.path.relpath(SKILL_ROOT, destination), skill_link, target_is_directory=True)
-    except OSError:
+    except (OSError, ValueError):
+        # relpath raises ValueError when the clone and instance use different
+        # Windows drives. A plain path pointer is the portable fallback.
         (destination / "launcher-skill.path.txt").write_text(str(SKILL_ROOT) + "\n", encoding="utf-8")
     print(f"INSTANCE {destination}")
     return 0

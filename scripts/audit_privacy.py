@@ -21,6 +21,8 @@ def main() -> int:
         if path.resolve() == Path(__file__).resolve():
             continue
         relative = path.relative_to(SKILL_ROOT)
+        if ".git" in relative.parts:
+            continue
         if path.name == ".DS_Store" or path.name == "__pycache__" or path.suffix == ".pyc":
             errors.append(f"generated workspace residue stored in skill: {relative}")
         if TEMPLATE in path.parents and any(ord(character) > 127 for character in path.name):
