@@ -1,0 +1,14 @@
+.DS_Store
+Thumbs.db
+__pycache__/
+*.py[cod]
+*.log
+.venv/
+venv/
+dashboard/.launcher-instance
+dashboard/logs/
+dashboard/validation-report.json
+launcher-skill
+launcher-skill.path.txt
+projects/*
+!projects/.gitkeep

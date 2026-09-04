@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "command": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        {
+          "type": "object", "additionalProperties": false, "minProperties": 1,
+          "properties": {
+            "macos": {"$ref": "#/$defs/command"},
+            "windows": {"$ref": "#/$defs/command"},
+            "default": {"$ref": "#/$defs/command"}
+          }
+        }
+      ]
+    },
+    "validation": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "startup_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "stability_seconds": {"type": "number", "minimum": 5},
+        "shutdown_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "poll_interval_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "action_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "monitor_detection_timeout_seconds": {"type": "number", "exclusiveMinimum": 0}
+      }
+    }
+  },
+  "title": "Local Service Launcher Framework v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "launcher", "services"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "launcher": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "title": {"type": "string"},
+        "host": {"enum": ["127.0.0.1", "localhost"]},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "monitor_interval_seconds": {"type": "number", "minimum": 0.25, "maximum": 5},
+        "stop_services_on_exit": {"type": "boolean"}
+      }
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "category", "project_ref", "display", "lifecycle", "health"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+          "category": {"enum": ["static-web", "frontend", "backend", "service"]},
+          "project_ref": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+          "display": {
+            "type": "object", "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "description": {"type": "string"},
+              "name_from": {
+                "type": "object", "additionalProperties": false, "required": ["file"],
+                "properties": {"file": {"type": "string"}, "json_path": {"type": "string"}}
+              }
+            },
+            "anyOf": [{"required": ["name"]}, {"required": ["name_from"]}]
+          },
+          "lifecycle": {
+            "type": "object", "additionalProperties": false, "required": ["start"],
+            "properties": {
+              "start": {"$ref": "#/$defs/command"},
+              "stop": {"$ref": "#/$defs/command"},
+              "update": {"$ref": "#/$defs/command"}
+            }
+          },
+          "health": {
+            "type": "object", "additionalProperties": false, "required": ["mode"],
+            "properties": {
+              "mode": {"enum": ["http", "tcp", "env", "auto"]},
+              "url": {"type": "string"}, "host": {"type": "string"}, "port": {"type": "integer"},
+              "timeout_seconds": {"type": "number"}, "env_file": {"type": "string"},
+              "port_key": {"type": "string"}, "scheme": {"enum": ["http", "https", "tcp"]},
+              "path": {"type": "string"}, "fallback_url": {"type": "string"},
+              "fallback_port": {"type": "integer"}
+            },
+            "allOf": [
+              {"if": {"properties": {"mode": {"const": "http"}}}, "then": {"required": ["url"]}},
+              {"if": {"properties": {"mode": {"const": "tcp"}}}, "then": {"required": ["port"]}},
+              {"if": {"properties": {"mode": {"const": "env"}}}, "then": {"required": ["port_key"]}}
+            ]
+          },
+          "url": {"type": "string"},
+          "env": {"type": "object", "additionalProperties": {"type": ["string", "number", "boolean"]}},
+          "open_on_start": {"type": "boolean"},
+          "validation": {"$ref": "#/$defs/validation"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Local Service Launcher</title>
+  <link rel="stylesheet" href="style.css?v=9">
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <div class="hero-title"><p class="eyebrow">LOCAL SERVICE MONITOR</p><h1 id="title">Local Service Launcher</h1></div>
+      <div class="hero-actions">
+        <div id="connection" class="connection offline"><i></i><span>正在连接监控流</span></div>
+        <button id="quitDashboard" class="quit-button" type="button" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H6.8A1.8 1.8 0 0 0 5 6.8v10.4A1.8 1.8 0 0 0 6.8 19H10m4-3 4-4-4-4m4 4H9"/></svg>
+          <span>退出仪表盘</span>
+        </button>
+      </div>
+    </header>
+
+    <section id="alertBanner" class="alert-banner" hidden>
+      <strong>检测到服务异常</strong><span id="alertText"></span>
+    </section>
+
+    <section class="metrics" aria-label="服务摘要">
+      <article><span>健康</span><strong id="healthyCount">0</strong></article>
+      <article><span>异常</span><strong id="problemCount">0</strong></article>
+      <article><span>已停止</span><strong id="stoppedCount">0</strong></article>
+      <article><span>最近采样</span><strong id="lastSample">--:--:--</strong></article>
+    </section>
+
+    <div class="dashboard">
+      <section class="services-panel">
+        <div class="section-head"><div><p class="section-kicker">SERVICE WORKSPACE</p><h2>服务状态</h2></div><span id="summary">等待第一次采样…</span></div>
+        <div id="services" class="grid"></div>
+      </section>
+      <aside id="eventsPanel" class="events-panel is-empty">
+        <div class="section-head"><div><p class="section-kicker">ACTIVITY</p><h2>状态事件</h2></div><button id="clearEvents" disabled>清空</button></div>
+        <ol id="events" aria-live="polite"><li class="empty"><i aria-hidden="true"></i><strong>暂无状态变化</strong><span>服务启动、停止或恢复后会显示在这里</span></li></ol>
+      </aside>
+    </div>
+  </main>
+  <dialog id="logDialog"><div class="dialog-head"><strong id="logTitle">日志</strong><button type="button" onclick="logDialog.close()">关闭</button></div><pre id="logText"></pre></dialog>
+  <dialog id="quitDialog" class="confirm-dialog">
+    <form method="dialog">
+      <div class="confirm-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M10 5H6.8A1.8 1.8 0 0 0 5 6.8v10.4A1.8 1.8 0 0 0 6.8 19H10m4-3 4-4-4-4m4 4H9"/></svg>
+      </div>
+      <h2>退出本机服务仪表盘？</h2>
+      <p>只会关闭仪表盘和它的后台监控进程。当前运行的业务服务会继续运行，不会被停止。</p>
+      <div class="confirm-actions">
+        <button value="cancel">取消</button>
+        <button id="confirmQuit" class="danger" value="confirm">确认退出</button>
+      </div>
+    </form>
+  </dialog>
+  <section id="shutdownScreen" class="shutdown-screen" hidden>
+    <div class="shutdown-card">
+      <div class="shutdown-check" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="m7 12 3 3 7-7"/></svg>
+      </div>
+      <p class="section-kicker">DASHBOARD CLOSED</p>
+      <h2>仪表盘已退出</h2>
+      <p>后台监控进程已结束，业务服务仍在继续运行。</p>
+      <button id="closePage" type="button">关闭此页面</button>
+    </div>
+  </section>
+  <script src="app.js?v=15"></script>
+</body>
+</html>

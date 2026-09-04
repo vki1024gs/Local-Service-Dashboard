@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "launcher": {
+    "title": "Local Service Launcher",
+    "host": "127.0.0.1",
+    "port": 17321,
+    "monitor_interval_seconds": 1,
+    "stop_services_on_exit": false
+  },
+  "services": [
+    {
+      "id": "example-static",
+      "category": "static-web",
+      "project_ref": "example-static",
+      "display": {
+        "name": "Example static site",
+        "description": "Replace this registration with a user-specified project.",
+        "name_from": {
+          "file": "package.json",
+          "json_path": "name"
+        }
+      },
+      "lifecycle": {
+        "start": {
+          "macos": ["python3", "-m", "http.server", "8080"],
+          "windows": ["py", "-m", "http.server", "8080"]
+        }
+      },
+      "url": "auto",
+      "health": {
+        "mode": "http",
+        "url": "http://127.0.0.1:8080/",
+        "timeout_seconds": 1
+      },
+      "validation": {
+        "startup_timeout_seconds": 45,
+        "stability_seconds": 10,
+        "shutdown_timeout_seconds": 15,
+        "poll_interval_seconds": 1,
+        "action_timeout_seconds": 30,
+        "monitor_detection_timeout_seconds": 5
+      },
+      "open_on_start": false
+    }
+  ]
+}
