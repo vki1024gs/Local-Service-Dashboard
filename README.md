@@ -19,16 +19,16 @@ The dashboard itself uses only the Python standard library. Node.js is not requi
 Clone the repository, then generate a private dashboard instance outside the clone:
 
 ```bash
-git clone https://github.com/YOUR-ACCOUNT/local-service-dashboard.git
-cd local-service-dashboard
+git clone https://github.com/vki1024gs/Local-Service-Dashboard.git
+cd Local-Service-Dashboard
 python3 scripts/create_launcher.py ../my-local-dashboard
 ```
 
 On Windows PowerShell:
 
 ```powershell
-git clone https://github.com/YOUR-ACCOUNT/local-service-dashboard.git
-Set-Location local-service-dashboard
+git clone https://github.com/vki1024gs/Local-Service-Dashboard.git
+Set-Location Local-Service-Dashboard
 py scripts/create_launcher.py ..\my-local-dashboard
 ```
 
@@ -80,10 +80,6 @@ Edit `my-local-dashboard/dashboard/launcher.config.json`. Start from the bundled
         "start": {
           "macos": ["python3", "-m", "http.server", "8080"],
           "windows": ["py", "-m", "http.server", "8080"]
-        },
-        "update": {
-          "macos": ["git", "pull", "--ff-only"],
-          "windows": ["git", "pull", "--ff-only"]
         }
       },
       "health": {
@@ -130,7 +126,7 @@ The dashboard binds to `127.0.0.1` and uses a per-session API token. The Open ac
 Update the reusable clone and run its tests:
 
 ```bash
-cd local-service-dashboard
+cd Local-Service-Dashboard
 git pull --ff-only
 python3 scripts/smoke_test.py
 python3 scripts/audit_privacy.py
@@ -139,6 +135,8 @@ python3 scripts/audit_privacy.py
 Existing generated instances are intentionally independent copies. Do not overwrite their `dashboard/launcher.config.json`, registry, adapters, logs, or validation report. To adopt a framework update safely, generate a new instance, re-register the same explicit projects, copy only reviewed service descriptors, validate it, and switch after lifecycle verification passes.
 
 Service-level updates are separate: when a service has a configured `lifecycle.update`, its Update action runs that project-owned command and then rechecks health. An update command should not be invented or assumed safe.
+
+Update scripts must stream card progress with `LAUNCHER_PROGRESS` as documented in [Configuration reference](references/configuration.md). A conforming updater must report 100 only after post-install verification, use a cross-process single-flight lock, unique temporary output, validation before replacement, and an atomic rename. A zero exit without the terminal 100 marker is treated as failure. While an update is active, the dashboard rejects conflicting service actions and shutdown. Failures open a readable application dialog with the meaningful error and cleaned log entry instead of a browser alert.
 
 ## Troubleshooting
 

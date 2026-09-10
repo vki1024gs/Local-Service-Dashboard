@@ -47,6 +47,8 @@ The generated Python process serves a localhost WebUI and JSON API, supervises o
 
 The monitor reports unexpected stops and later recovery. It does not automatically restart services or scan the machine for unknown projects, ports, or processes.
 
+Finite update commands may emit `LAUNCHER_PROGRESS` JSON lines. The runtime parses them into the live service snapshot, updates card progress in place, and keeps a service-level operation guard until post-update startup and stability checks finish. Idle and explicit dashboard shutdown are blocked during that interval. Project-owned update scripts provide cross-process locking and atomic installation so a launcher restart cannot create a second updater.
+
 ## Trust model
 
 `launcher.config.json` is executable local configuration because lifecycle commands run on the host. The server binds to `127.0.0.1`, state-changing API requests require a per-session token, and secrets belong in the environment or a service-owned ignored file.

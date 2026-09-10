@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>Local Service Launcher</title>
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <main>
@@ -43,6 +43,18 @@
     </div>
   </main>
   <dialog id="logDialog"><div class="dialog-head"><strong id="logTitle">日志</strong><button type="button" onclick="logDialog.close()">关闭</button></div><pre id="logText"></pre></dialog>
+  <dialog id="errorDialog" class="message-dialog">
+    <div class="message-dialog-body">
+      <p class="section-kicker">ACTION FAILED</p>
+      <h2 id="errorTitle">操作失败</h2>
+      <p id="errorSummary">操作未完成</p>
+      <small id="errorMeta"></small>
+      <div class="message-actions">
+        <button id="errorLogs" type="button">查看日志</button>
+        <button class="primary" type="button" onclick="errorDialog.close()">知道了</button>
+      </div>
+    </div>
+  </dialog>
   <dialog id="quitDialog" class="confirm-dialog">
     <form method="dialog">
       <div class="confirm-icon" aria-hidden="true">
@@ -67,6 +79,6 @@
       <button id="closePage" type="button">关闭此页面</button>
     </div>
   </section>
-  <script src="app.js?v=15"></script>
+  <script src="app.js?v=16"></script>
 </body>
 </html>

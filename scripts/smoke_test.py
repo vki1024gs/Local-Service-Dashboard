@@ -211,6 +211,73 @@ with tempfile.TemporaryDirectory() as temp:
         assert http_probe.call_count == 1
 print("OK: lightweight TCP sampling with cached successful HTTP probe")
 
+with tempfile.TemporaryDirectory() as temp:
+    root = Path(temp)
+    project = root / "project"
+    project.mkdir()
+    registry = root / "registry" / "projects"
+    registry.mkdir(parents=True)
+    (registry / "progress.path.json").write_text(json.dumps({"target": str(project)}), encoding="utf-8")
+    path = root / "launcher.config.json"
+    path.write_text(json.dumps({"schema_version": 1, "launcher": {}, "services": [{
+        "id": "progress", "category": "service", "project_ref": "progress",
+        "display": {"name": "Progress fixture"},
+        "lifecycle": {
+            "start": [sys.executable, "-c", "pass"],
+            "update": [sys.executable, "-c", (
+                "print('LAUNCHER_PROGRESS {\\\"percent\\\":42,\\\"message\\\":\\\"Downloading\\\"}');"
+                "print('\\033[31msynthetic failure\\033[0m');raise SystemExit(7)"
+            )],
+        },
+        "health": {"mode": "tcp", "port": 1},
+        "validation": {"action_timeout_seconds": 5},
+    }]}), encoding="utf-8")
+    launcher.LOG_DIR = root / "logs"
+    manager = launcher.ServiceManager(launcher.load_config(path))
+    manager._begin_operation("progress", "update", "Preparing")
+    try:
+        manager._run_finite_action(manager.services["progress"], "update")
+        raise AssertionError("failed synthetic update must raise ActionError")
+    except launcher.ActionError as exc:
+        assert exc.code == "action_failed"
+        assert exc.exit_code == 7
+        assert exc.detail == "synthetic failure"
+    operation = manager.operation("progress")
+    assert operation and operation["progress"] == 42 and operation["message"] == "Downloading"
+    try:
+        manager.start("progress")
+        raise AssertionError("concurrent service action must be rejected")
+    except launcher.ActionError as exc:
+        assert exc.code == "action_in_progress"
+    rendered_log = manager.log_tail("progress")
+    assert "LAUNCHER_PROGRESS" not in rendered_log
+    assert "\x1b" not in rendered_log
+    assert "PROGRESS 42% Downloading" in rendered_log
+    assert "ACTION update FAILED code=7" in rendered_log
+    manager._finish_operation("progress")
+    assert not manager.has_active_operations()
+
+    service = manager.services["progress"]
+    service["update"] = [sys.executable, "-c", (
+        "print('LAUNCHER_PROGRESS {\\\"percent\\\":75,\\\"message\\\":\\\"Almost done\\\"}')"
+    )]
+    manager._begin_operation("progress", "update", "Preparing")
+    try:
+        manager._run_finite_action(service, "update")
+        raise AssertionError("an update without the 100% marker must fail")
+    except launcher.ActionError as exc:
+        assert exc.code == "progress_incomplete"
+    manager._finish_operation("progress")
+
+    service["update"] = [sys.executable, "-c", (
+        "print('LAUNCHER_PROGRESS {\\\"percent\\\":100,\\\"message\\\":\\\"Complete\\\"}')"
+    )]
+    manager._begin_operation("progress", "update", "Preparing")
+    manager._run_finite_action(service, "update")
+    manager._finish_operation("progress")
+    assert "ACTION update SUCCESS" in manager.log_tail("progress")
+print("OK: action progress, readable logs, and per-service concurrency guard")
+
 presence = launcher.ClientPresence(15)
 assert presence.active_clients == 0
 assert not presence.should_exit()
@@ -229,6 +296,9 @@ print("OK: WebUI idle exit waits for the last client and cancels on reconnect")
 class ShutdownManager:
     def public_services(self):
         return []
+
+    def has_active_operations(self):
+        return False
 
 
 class FakeShutdownServer:
@@ -260,6 +330,35 @@ shutdown_handler.do_POST()
 assert shutdown_handler.response == (202, {"status": "shutting-down"})
 assert shutdown_handler.server.shutdown_called.wait(timeout=1)
 print("OK: authenticated WebUI shutdown exits the dashboard server")
+
+
+class BusyShutdownManager(ShutdownManager):
+    def has_active_operations(self):
+        return True
+
+
+busy_shutdown_handler_base = launcher.make_handler(
+    BusyShutdownManager(), "synthetic-token", "Synthetic Launcher"
+)
+
+
+class BusyShutdownHandler(busy_shutdown_handler_base):
+    def __init__(self):
+        self.path = "/api/shutdown"
+        self.headers = {"X-Launcher-Token": "synthetic-token"}
+        self.server = FakeShutdownServer()
+        self.response = None
+
+    def _json(self, status, payload):
+        self.response = (status, payload)
+
+
+busy_shutdown_handler = BusyShutdownHandler()
+busy_shutdown_handler.do_POST()
+assert busy_shutdown_handler.response[0] == 409
+assert busy_shutdown_handler.response[1]["error"] == "action_in_progress"
+assert not busy_shutdown_handler.server.shutdown_called.is_set()
+print("OK: dashboard shutdown is rejected during an active operation")
 
 
 class FakeManager:

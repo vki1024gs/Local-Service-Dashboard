@@ -9,12 +9,18 @@ const summaryEl = document.querySelector("#summary");
 const connectionEl = document.querySelector("#connection");
 const logDialog = document.querySelector("#logDialog");
 const quitDialog = document.querySelector("#quitDialog");
+const errorDialog = document.querySelector("#errorDialog");
+let failedServiceId = null;
 
 async function api(path, options={}) {
   options.headers = {...options.headers, "X-Launcher-Token": token};
   const response = await fetch(path, options);
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(data.message || data.error || `HTTP ${response.status}`);
+    error.payload = data;
+    throw error;
+  }
   return data;
 }
 
@@ -36,9 +42,11 @@ const labels = {
   unhealthy: "健康检查失败", "stopped-unexpectedly": "意外停止", "startup-timeout": "启动超时"
 };
 const problemLabels = {"health-check-failed":"健康检查失败", "stopped-unexpectedly":"意外停止", "startup-timeout":"启动超时"};
+const actionLabels = {start:"启动", stop:"停止", restart:"重启", update:"更新"};
 function hasIssue(service) { return Boolean(service.problem || service.port_conflicts?.length); }
 function card(service) {
   const state = service.state || (service.ready ? "ready" : service.running ? "starting" : "stopped");
+  const operation = service.operation;
   const ports = service.ports?.length ? service.ports : (service.port == null ? [] : [{name:"端口", port:service.port}]);
   const portTags = ports.map(port => {
     const detail = port.conflict ? `，与 ${port.conflicts_with.join("、")} 冲突` : "";
@@ -49,19 +57,23 @@ function card(service) {
     ...(service.port_conflicts || []).map(conflict => `端口冲突：${conflict.port} 同时由 ${conflict.with.join("、")} 使用`)
   ].filter(Boolean).map(message => `<div class="service-alert">${esc(message)}</div>`).join("");
   const checks = service.health && service.health.checks ? `<div class="health-mini">${Object.values(service.health.checks).map(check => `<span class="${esc(check.status || "unknown")}">${esc(check.name)}: ${esc(check.status)}</span>`).join("")}</div>` : "";
-  const openAction = service.url ? (service.ready
+  const operationBox = operation ? `<div class="operation" data-operation>
+    <div><strong data-operation-message>${esc(operation.message || "正在处理…")}</strong><span data-operation-percent>${operation.progress == null ? "" : `${esc(operation.progress)}%`}</span></div>
+    <div class="progress-track" role="progressbar" aria-label="${esc(actionLabels[operation.action] || operation.action)}进度" aria-valuemin="0" aria-valuemax="100" ${operation.progress == null ? "" : `aria-valuenow="${esc(operation.progress)}"`}><i data-operation-bar style="width:${operation.progress == null ? 24 : esc(operation.progress)}%"></i></div>
+  </div>` : "";
+  const openAction = service.url ? (service.ready && !operation
     ? `<a class="link primary-action" href="${esc(service.url)}" target="_blank" rel="noreferrer">打开</a>`
     : `<button class="primary-action" disabled>打开</button>`) : "";
-  const startAction = !service.running ? `<button class="${service.url ? "" : "primary"}" data-action="start">启动</button>` : "";
+  const startAction = !service.running && !operation ? `<button class="${service.url ? "" : "primary"}" data-action="start">启动</button>` : "";
   const menuActions = [
     `<button data-action="logs">查看日志</button>`,
-    service.running ? `<button data-action="restart">重启</button>` : "",
-    service.running ? `<button class="danger-action" data-action="stop">停止</button>` : "",
-    service.can_update && !service.running ? `<button data-action="update">更新</button>` : ""
+    service.running && !operation ? `<button data-action="restart">重启</button>` : "",
+    service.running && !operation ? `<button class="danger-action" data-action="stop">停止</button>` : "",
+    service.can_update && !service.running && !operation ? `<button data-action="update">更新</button>` : ""
   ].join("");
   return `<article class="card state-${esc(state)} ${hasIssue(service)?"has-problem":""}" data-id="${esc(service.id)}">
-    <div class="top"><div class="card-title"><div class="port-list">${portTags}</div><h3>${esc(service.name)}</h3></div><span class="status ${esc(state)}"><i class="dot"></i>${esc(labels[state] || state)}</span></div>
-    <p class="desc">${esc(service.description || "")}</p>${alerts}${checks}
+    <div class="top"><div class="card-title"><div class="port-list">${portTags}</div><h3>${esc(service.name)}</h3></div><span class="status ${operation?"updating":esc(state)}"><i class="dot"></i>${operation?"更新中":esc(labels[state] || state)}</span></div>
+    <p class="desc">${esc(service.description || "")}</p>${alerts}${checks}${operationBox}
     <div class="meta"><span><small>最近变更</small><strong>${service.last_change_at ? dateTime(service.last_change_at) : "—"}</strong></span></div>
     <div class="actions">${openAction}${startAction}<details class="action-menu"><summary aria-label="更多操作">更多</summary><div class="action-menu-panel">${menuActions}</div></details></div>
   </article>`;
@@ -72,8 +84,31 @@ function cardRenderSignature(services) {
     id: service.id, name: service.name, description: service.description, ports: service.ports,
     url: service.url, can_update: service.can_update, running: service.running, ready: service.ready,
     state: service.state, problem: service.problem, port_conflicts: service.port_conflicts, last_change_at: service.last_change_at,
+    operation: service.operation ? {action:service.operation.action} : null,
     checks: Object.values(service.health?.checks || {}).map(check => ({name: check.name, status: check.status}))
   })));
+}
+
+function updateOperationProgress(services) {
+  for (const service of services) {
+    if (!service.operation) continue;
+    const element = servicesEl.querySelector(`[data-id="${CSS.escape(service.id)}"] [data-operation]`);
+    if (!element) continue;
+    const progress = service.operation.progress;
+    element.querySelector("[data-operation-message]").textContent = service.operation.message || "正在处理…";
+    element.querySelector("[data-operation-percent]").textContent = progress == null ? "" : `${progress}%`;
+    const track = element.querySelector("[role=progressbar]");
+    const bar = element.querySelector("[data-operation-bar]");
+    if (progress == null) {
+      track.removeAttribute("aria-valuenow");
+      track.classList.add("indeterminate");
+      bar.style.width = "24%";
+    } else {
+      track.setAttribute("aria-valuenow", progress);
+      track.classList.remove("indeterminate");
+      bar.style.width = `${progress}%`;
+    }
+  }
 }
 
 function recordChanges(services, observedAt) {
@@ -108,6 +143,7 @@ function applySnapshot(snapshot) {
     servicesEl.innerHTML = services.map(card).join("");
     serviceMarkupSignature = nextMarkupSignature;
   }
+  updateOperationProgress(services);
   const healthy = services.filter(item=>item.ready && !hasIssue(item)).length;
   const problems = services.filter(hasIssue).length;
   const stopped = services.filter(item=>!item.running && !hasIssue(item)).length;
@@ -120,8 +156,29 @@ function applySnapshot(snapshot) {
   const banner = document.querySelector("#alertBanner");
   banner.hidden = problems === 0;
   document.querySelector("#alertText").textContent = problems ? services.filter(hasIssue).map(item=>item.name).join("、") : "";
+  const activeOperations = services.filter(item=>item.operation);
+  const quitButton = document.querySelector("#quitDashboard");
+  quitButton.disabled = activeOperations.length > 0;
+  quitButton.title = activeOperations.length ? "服务操作完成后才能退出仪表盘" : "";
   document.title = problems ? `⚠ ${problems} · ${baseTitle}` : baseTitle;
   renderEvents();
+}
+
+function showActionError(serviceId, action, error) {
+  failedServiceId = serviceId;
+  document.querySelector("#errorTitle").textContent = `${actionLabels[action] || "操作"}失败`;
+  document.querySelector("#errorSummary").textContent = error.message || "操作未完成";
+  const code = error.payload?.error;
+  const exitCode = error.payload?.exit_code;
+  document.querySelector("#errorMeta").textContent = [code ? `错误类型：${code}` : "", exitCode == null ? "" : `退出码：${exitCode}`].filter(Boolean).join(" · ");
+  errorDialog.showModal();
+}
+
+async function showLogs(serviceId) {
+  const data = await api(`/api/logs/${serviceId}`);
+  document.querySelector("#logTitle").textContent=`${serviceId} 日志`;
+  document.querySelector("#logText").textContent=data.log || "暂无日志";
+  logDialog.showModal();
 }
 
 function setConnection(online, text) {
@@ -156,11 +213,11 @@ servicesEl.addEventListener("click", async event => {
   button.closest("details")?.removeAttribute("open");
   const id = button.closest(".card").dataset.id; const action = button.dataset.action;
   if (action === "logs") {
-    const data = await api(`/api/logs/${id}`); document.querySelector("#logTitle").textContent=`${id} 日志`; document.querySelector("#logText").textContent=data.log || "暂无日志"; logDialog.showModal(); return;
+    await showLogs(id); return;
   }
   button.disabled = true;
   try { await api(`/api/${action}/${id}`, {method:"POST"}); }
-  catch (error) { alert(error.message); button.disabled=false; }
+  catch (error) { showActionError(id, action, error); button.disabled=false; }
 });
 
 document.addEventListener("click", event => {
@@ -170,6 +227,11 @@ document.addEventListener("click", event => {
 });
 
 document.querySelector("#clearEvents").addEventListener("click", ()=>{eventItems=[]; renderEvents();});
+document.querySelector("#errorLogs").addEventListener("click", async ()=>{
+  if (!failedServiceId) return;
+  errorDialog.close();
+  await showLogs(failedServiceId);
+});
 document.querySelector("#quitDashboard").addEventListener("click", ()=>quitDialog.showModal());
 document.querySelector("#confirmQuit").addEventListener("click", async event => {
   event.preventDefault();
@@ -185,7 +247,7 @@ document.querySelector("#confirmQuit").addEventListener("click", async event => 
   } catch (error) {
     button.disabled = false;
     button.textContent = "确认退出";
-    alert(`退出失败：${error.message}`);
+    showActionError("", "quit", error);
   }
 });
 document.querySelector("#closePage").addEventListener("click", ()=>window.close());

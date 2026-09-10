@@ -27,6 +27,9 @@ Read `SKILL.md`, `ARCHITECTURE.md`, and the relevant file under `references/` be
 - Do not add project discovery, arbitrary command editing, port reservation, or automatic restart.
 - Update runtime, validator, schema/reference docs, synthetic tests, and README together when behavior changes.
 - Keep Python runtime dependencies standard-library-only unless a maintainer explicitly changes that policy.
+- Require update scripts to implement `LAUNCHER_PROGRESS`, a cross-process single-flight lock, unique temporary files, validation, and atomic replacement.
+- Keep the dashboard alive during finite operations and reject conflicting service actions or shutdown until completion.
+- Render lifecycle failures in the application UI with cleaned logs; do not use native browser alerts.
 
 ## Required checks
 

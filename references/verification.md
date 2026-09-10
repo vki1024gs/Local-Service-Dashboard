@@ -30,6 +30,8 @@ A service passes only when every required stage passes in one complete run. Do n
 
 The verifier writes `dashboard/validation-report.json` with the OS, timestamps, service ID, stage results, and final state. If verification cannot run on Windows or macOS, label that OS `untested`; do not infer cross-platform success from the other OS.
 
+For each configured update command, also require: single-flight rejection, visible progress, unique temporary output, pre-install validation, atomic replacement, preservation of the prior artifact after a forced failure, post-install validation, readable log boundaries, and successful service startup/stability after the update. Repeat the update request while the first synthetic invocation is active and require a deterministic rejection rather than concurrent execution.
+
 ## Failure handling
 
 - Start timeout: inspect the service log and the existing start script inside the allowed path.

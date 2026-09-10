@@ -58,6 +58,12 @@ The registrar tries a relative directory symlink first. On Windows it falls back
 
 Optional GUI launch wrappers belong under `dashboard/entrypoints/`, not under service `adapters/`. They must locate the instance relative to their own bundle or executable and must not embed registered project paths. Keep the fixed English `.command` and `.bat` launch files as portable fallback entrypoints.
 
+## Action safety
+
+Only one lifecycle action may affect a service at a time. While an update is active, the runtime exposes its current operation through the live service snapshot, rejects competing start/stop/restart/update requests, prevents idle exit, and rejects explicit dashboard shutdown. The WebUI must preserve this busy state across live samples instead of merely disabling the clicked DOM element.
+
+Project-owned update scripts provide the second safety layer. They must reject concurrent invocations across launcher-process restarts, use a unique temporary download, validate before replacement, and install through an atomic same-filesystem rename. A project start script must refuse to launch while that update lock is active. A stale lock must be detected deliberately; never treat a fixed shared temporary filename as a lock.
+
 ## Source-of-truth rules
 
 1. Treat project-owned lifecycle scripts and manifests as authoritative.

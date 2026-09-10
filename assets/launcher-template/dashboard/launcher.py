@@ -29,6 +29,33 @@ LOG_DIR = ROOT / "logs"
 INSTANCE_MARKER = ROOT / ".launcher-instance"
 REF_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 LOCAL_URL_RE = re.compile(r"https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?[^\s\"']*")
+ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+PROGRESS_PREFIX = "LAUNCHER_PROGRESS "
+CURL_PROGRESS_RE = re.compile(
+    r"^\s*\d{1,3}\s+\S+\s+\d{1,3}\s+\S+\s+\d{1,3}\s+\S+\s+\d{1,3}\s+\S+\s+"
+)
+
+
+class ActionError(RuntimeError):
+    def __init__(self, code: str, action: str, detail: str, exit_code: int | None = None):
+        super().__init__(detail)
+        self.code = code
+        self.action = action
+        self.detail = detail
+        self.exit_code = exit_code
+
+
+def clean_log_text(text: str) -> str:
+    """Make terminal-oriented output readable in the WebUI without changing source logs."""
+    lines = ANSI_RE.sub("", text).replace("\r", "\n").splitlines()
+    cleaned = []
+    for line in lines:
+        if "% Total" in line and "% Received" in line:
+            continue
+        if CURL_PROGRESS_RE.match(line):
+            continue
+        cleaned.append(line.rstrip())
+    return "\n".join(cleaned)
 
 
 class LauncherHTTPServer(ThreadingHTTPServer):
@@ -65,10 +92,11 @@ class ClientPresence:
                     time.monotonic() - self.last_zero_at >= self.idle_exit_seconds)
 
 
-def stop_server_when_client_idle(server: ThreadingHTTPServer, presence: ClientPresence) -> None:
+def stop_server_when_client_idle(server: ThreadingHTTPServer, presence: ClientPresence,
+                                 manager: Any) -> None:
     while True:
         time.sleep(min(0.5, max(0.05, presence.idle_exit_seconds / 4)))
-        if presence.should_exit():
+        if presence.should_exit() and not manager.has_active_operations():
             server.shutdown()
             return
 
@@ -167,6 +195,7 @@ class ServiceManager:
         self.observed_active: set[str] = set()
         self.last_state_keys: dict[str, tuple[str, str | None, str]] = {}
         self.last_change_at: dict[str, str] = {}
+        self.operations: dict[str, dict[str, Any]] = {}
         self.lock = threading.RLock()
         self.status_pool = concurrent.futures.ThreadPoolExecutor(
             max_workers=max(1, min(16, len(self.services))), thread_name_prefix="service-health"
@@ -179,6 +208,51 @@ class ServiceManager:
         if service_id not in self.services:
             raise KeyError(f"Unknown service: {service_id}")
         return self.services[service_id]
+
+    def _begin_operation(self, service_id: str, action: str, message: str) -> None:
+        with self.lock:
+            current = self.operations.get(service_id)
+            if current:
+                raise ActionError("action_in_progress", action,
+                                  f"{current['action']} is already in progress")
+            self.operations[service_id] = {
+                "action": action,
+                "progress": None,
+                "message": message,
+                "started_at": time.time(),
+            }
+
+    def _set_operation_progress(self, service_id: str, progress: int | None,
+                                message: str | None = None) -> None:
+        with self.lock:
+            operation = self.operations.get(service_id)
+            if not operation:
+                return
+            if progress is not None:
+                progress = max(0, min(100, int(progress)))
+                prior = operation.get("progress")
+                operation["progress"] = progress if prior is None else max(prior, progress)
+            if message:
+                operation["message"] = message
+
+    def _finish_operation(self, service_id: str) -> None:
+        with self.lock:
+            self.operations.pop(service_id, None)
+
+    def operation(self, service_id: str) -> dict[str, Any] | None:
+        with self.lock:
+            value = self.operations.get(service_id)
+            return dict(value) if value else None
+
+    def has_active_operations(self) -> bool:
+        with self.lock:
+            return bool(self.operations)
+
+    def _require_idle(self, service_id: str, requested_action: str) -> None:
+        current = self.operations.get(service_id)
+        if current:
+            raise ActionError("action_in_progress", requested_action,
+                              f"{current['action']} is already in progress")
 
     def _spawn(self, service: dict[str, Any], action: str) -> subprocess.Popen[bytes]:
         command = select_command(service.get(action))
@@ -207,6 +281,7 @@ class ServiceManager:
     def start(self, service_id: str) -> dict[str, Any]:
         with self.lock:
             service = self._service(service_id)
+            self._require_idle(service_id, "start")
             if self.status(service_id)["running"]:
                 return self.status(service_id)
             self.desired_states[service_id] = "running"
@@ -252,23 +327,97 @@ class ServiceManager:
         prior_log = self.logs.pop(service["id"], None)
         if prior_log:
             prior_log.close()
-        process = self._spawn(service, action)
-        log_file = self.logs.pop(service["id"], None)
+        command = select_command(service.get(action))
+        if command is None:
+            raise ActionError("action_not_configured", action, f"No {action} command is configured")
+        cwd = Path(service["cwd"]).expanduser()
+        if not cwd.is_dir():
+            raise ActionError("working_directory_missing", action,
+                              f"Working directory does not exist: {cwd}")
+        env = os.environ.copy()
+        env.update({str(k): str(v) for k, v in service.get("env", {}).items()})
+        kwargs: dict[str, Any] = {
+            "cwd": str(cwd), "env": env, "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT, "shell": isinstance(command, str),
+            "text": True, "encoding": "utf-8", "errors": "replace", "bufsize": 1,
+        }
+        if os.name == "nt":
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs["start_new_session"] = True
+        log_path = LOG_DIR / f"{service['id']}.log"
+        started = time.monotonic()
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        log_file = open(log_path, "a", encoding="utf-8", buffering=1)
+        log_file.write(f"\n[{stamp}] ACTION {action} START\n")
+        process = subprocess.Popen(command, **kwargs)
+        last_lines: list[str] = []
+        saw_progress = False
+        saw_terminal_progress = False
+
+        def consume_output() -> None:
+            nonlocal saw_progress, saw_terminal_progress
+            assert process.stdout is not None
+            for raw_line in process.stdout:
+                line = clean_log_text(raw_line).strip()
+                if not line:
+                    continue
+                if line.startswith(PROGRESS_PREFIX):
+                    try:
+                        payload = json.loads(line.removeprefix(PROGRESS_PREFIX))
+                        progress = payload.get("percent")
+                        message = str(payload.get("message", "")).strip() or None
+                        self._set_operation_progress(service["id"], progress, message)
+                        saw_progress = True
+                        saw_terminal_progress = saw_terminal_progress or int(progress) == 100
+                        shown = f"{progress}%" if progress is not None else "…"
+                        log_file.write(f"[{time.strftime('%H:%M:%S')}] PROGRESS {shown} {message or ''}\n")
+                        continue
+                    except (ValueError, TypeError, json.JSONDecodeError):
+                        pass
+                log_file.write(line + "\n")
+                last_lines.append(line)
+                del last_lines[:-8]
+
+        reader = threading.Thread(target=consume_output, daemon=True,
+                                  name=f"{service['id']}-{action}-output")
+        reader.start()
         timeout = float(service.get("validation", {}).get("action_timeout_seconds", 30))
+        deadline = time.monotonic() + timeout
         try:
-            exit_code = process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired as exc:
-            self._terminate_managed(process)
-            raise TimeoutError(f"{action} command exceeded {timeout:g} seconds") from exc
+            while process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.1)
+            if process.poll() is None:
+                self._terminate_managed(process)
+                reader.join(timeout=2)
+                elapsed = time.monotonic() - started
+                log_file.write(f"[{time.strftime('%H:%M:%S')}] ACTION {action} TIMEOUT "
+                               f"after {elapsed:.1f}s\n")
+                raise ActionError("action_timeout", action,
+                                  f"Command exceeded {timeout:g} seconds")
+            exit_code = process.wait()
+            reader.join(timeout=2)
+            elapsed = time.monotonic() - started
+            if exit_code != 0:
+                detail = last_lines[-1] if last_lines else f"Command exited with code {exit_code}"
+                log_file.write(f"[{time.strftime('%H:%M:%S')}] ACTION {action} FAILED "
+                               f"code={exit_code} after {elapsed:.1f}s: {detail}\n")
+                raise ActionError("action_failed", action, detail, exit_code)
+            if action == "update" and not saw_terminal_progress:
+                detail = ("Update command did not report the required 100% completion marker"
+                          if saw_progress else "Update command did not report progress")
+                log_file.write(f"[{time.strftime('%H:%M:%S')}] ACTION {action} FAILED "
+                               f"after {elapsed:.1f}s: {detail}\n")
+                raise ActionError("progress_incomplete", action, detail)
+            log_file.write(f"[{time.strftime('%H:%M:%S')}] ACTION {action} SUCCESS "
+                           f"after {elapsed:.1f}s\n")
         finally:
-            if log_file:
-                log_file.close()
-        if exit_code != 0:
-            raise RuntimeError(f"{action} command exited with code {exit_code}")
+            log_file.close()
 
     def stop(self, service_id: str) -> dict[str, Any]:
         with self.lock:
             service = self._service(service_id)
+            self._require_idle(service_id, "stop")
             self.desired_states[service_id] = "stopped"
             process = self.processes.get(service_id)
             explicit_stop = select_command(service.get("stop")) is not None
@@ -287,6 +436,8 @@ class ServiceManager:
         return self.status(service_id)
 
     def restart(self, service_id: str) -> dict[str, Any]:
+        with self.lock:
+            self._require_idle(service_id, "restart")
         self.stop(service_id)
         service = self._service(service_id)
         validation = service.get("validation", {})
@@ -300,36 +451,49 @@ class ServiceManager:
         return self.start(service_id)
 
     def update(self, service_id: str) -> dict[str, Any]:
+        service = self._service(service_id)
         with self.lock:
-            service = self._service(service_id)
             if select_command(service.get("update")) is None:
-                raise ValueError("No update command configured")
+                raise ActionError("action_not_configured", "update", "No update command is configured")
             if self.status(service_id)["running"]:
-                raise RuntimeError("Stop the service before updating it")
+                raise ActionError("service_running", "update", "Stop the service before updating it")
+            self._begin_operation(service_id, "update", "正在准备更新…")
+        try:
+            self._set_operation_progress(service_id, 1, "正在执行更新命令…")
             self._run_finite_action(service, "update")
-            self.desired_states[service_id] = "running"
-            self.desired_since[service_id] = time.monotonic()
-            self.processes[service_id] = self._spawn(service, "start")
-            self.started_by_launcher.add(service_id)
+            self._set_operation_progress(service_id, 90, "更新完成，正在启动服务…")
+            with self.lock:
+                self.desired_states[service_id] = "running"
+                self.desired_since[service_id] = time.monotonic()
+                self.processes[service_id] = self._spawn(service, "start")
+                self.started_by_launcher.add(service_id)
 
-        validation = service.get("validation", {})
-        timeout = float(validation.get("startup_timeout_seconds", 45))
-        interval = float(validation.get("poll_interval_seconds", 1))
-        stability = float(validation.get("stability_seconds", 5))
-        deadline = time.monotonic() + timeout
-        while not self.status(service_id)["ready"]:
-            process = self.processes.get(service_id)
-            if process and process.poll() is not None:
-                raise RuntimeError(f"Updated service exited with code {process.returncode}")
-            if time.monotonic() >= deadline:
-                raise TimeoutError(f"Updated service was not ready within {timeout:g} seconds")
-            time.sleep(interval)
-        stable_until = time.monotonic() + stability
-        while time.monotonic() < stable_until:
-            if not self.status(service_id)["ready"]:
-                raise RuntimeError("Updated service did not remain healthy")
-            time.sleep(min(interval, max(0.1, stable_until - time.monotonic())))
-        return self.status(service_id)
+            validation = service.get("validation", {})
+            timeout = float(validation.get("startup_timeout_seconds", 45))
+            interval = float(validation.get("poll_interval_seconds", 1))
+            stability = float(validation.get("stability_seconds", 5))
+            deadline = time.monotonic() + timeout
+            while not self.status(service_id)["ready"]:
+                process = self.processes.get(service_id)
+                if process and process.poll() is not None:
+                    raise ActionError("service_start_failed", "update",
+                                      f"Updated service exited with code {process.returncode}",
+                                      process.returncode)
+                if time.monotonic() >= deadline:
+                    raise ActionError("service_start_timeout", "update",
+                                      f"Updated service was not ready within {timeout:g} seconds")
+                time.sleep(interval)
+            self._set_operation_progress(service_id, 96, "服务已启动，正在确认稳定性…")
+            stable_until = time.monotonic() + stability
+            while time.monotonic() < stable_until:
+                if not self.status(service_id)["ready"]:
+                    raise ActionError("service_unstable", "update",
+                                      "Updated service did not remain healthy")
+                time.sleep(min(interval, max(0.1, stable_until - time.monotonic())))
+            self._set_operation_progress(service_id, 100, "更新完成")
+            return self.status(service_id)
+        finally:
+            self._finish_operation(service_id)
 
     def _project_file(self, service: dict[str, Any], relative: str) -> Path:
         root = Path(service["cwd"]).resolve()
@@ -609,6 +773,7 @@ class ServiceManager:
                         "with": [names[other_id] for other_id in other_ids],
                     })
             item["can_update"] = select_command(service.get("update")) is not None
+            item["operation"] = self.operation(service["id"])
             item.update(status)
             if service.get("_last_observability_health"):
                 item["health"] = service["_last_observability_health"]
@@ -627,7 +792,7 @@ class ServiceManager:
             handle.seek(0, os.SEEK_END)
             size = handle.tell()
             handle.seek(max(0, size - limit))
-            return handle.read().decode("utf-8", errors="replace")
+            return clean_log_text(handle.read().decode("utf-8", errors="replace"))
 
     def _observability_log_tail(self, service: dict[str, Any]) -> str | None:
         base = self._observability_base_url(service)
@@ -742,6 +907,10 @@ def make_handler(manager: ServiceManager, token: str, title: str, monitor_interv
                 self._json(403, {"error": "Forbidden"})
                 return
             if self.path == "/api/shutdown":
+                if manager.has_active_operations():
+                    self._json(409, {"error": "action_in_progress",
+                                     "message": "有服务操作正在进行，完成后才能退出仪表盘"})
+                    return
                 self._json(202, {"status": "shutting-down"})
                 threading.Thread(target=self.server.shutdown, daemon=True,
                                  name="webui-user-shutdown").start()
@@ -757,8 +926,11 @@ def make_handler(manager: ServiceManager, token: str, title: str, monitor_interv
                 self._json(200, getattr(manager, action)(service_id))
             except KeyError as exc:
                 self._json(404, {"error": str(exc)})
+            except ActionError as exc:
+                self._json(409, {"error": exc.code, "action": exc.action,
+                                 "message": exc.detail, "exit_code": exc.exit_code})
             except Exception as exc:
-                self._json(409, {"error": str(exc)})
+                self._json(409, {"error": "unexpected_error", "message": str(exc)})
 
     return Handler
 
@@ -794,7 +966,7 @@ def main() -> int:
     presence = ClientPresence(idle_exit_seconds) if idle_exit_seconds > 0 else None
     server = LauncherHTTPServer((host, port), make_handler(manager, token, title, monitor_interval, presence))
     if presence is not None:
-        threading.Thread(target=stop_server_when_client_idle, args=(server, presence),
+        threading.Thread(target=stop_server_when_client_idle, args=(server, presence, manager),
                          daemon=True, name="webui-idle-exit").start()
     url = f"http://{host}:{server.server_port}/"
     print(f"{title}: {url}")

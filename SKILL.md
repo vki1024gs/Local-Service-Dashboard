@@ -38,6 +38,8 @@ Create one launcher instance from the bundled framework for services and destina
 4. Work only inside the created instance, identified by `dashboard/.launcher-instance`. Register each explicit project with `<destination>/dashboard/register_project.py`, passing an English `--visible-name`. Prefer its symlink or Windows junction mode; accept its pointer fallback.
 5. Replace the example with schema-v1 entries from [references/configuration.md](references/configuration.md). Use only the four fixed categories and documented schema fields. When a service exposes multiple ports, declare every user-relevant endpoint in `ports` with a concrete role label and its project-owned source.
 6. Preserve OS-specific lifecycle commands when they differ. Keep commands relative to the registered project root and prefer project-owned scripts.
+   - Update scripts should emit `LAUNCHER_PROGRESS` records, use a cross-process single-flight lock, download to a unique temporary file, validate it, and atomically replace the target.
+   - A service start script must refuse to start while its project-owned update lock is active.
 7. Validate with `python scripts/validate_config.py <destination>/dashboard/launcher.config.json`. Treat unknown fields, unregistered references, and old free-form `cwd`/`start` layouts as errors.
 8. Read [references/verification.md](references/verification.md), obtain any required test window, then run `python scripts/verify_lifecycle.py <launcher-directory>` for every configured service.
 9. Fix only the failing lifecycle stage and repeat the complete verification sequence. Do not mark a service complete from a successful start alone.
@@ -64,6 +66,8 @@ Create one launcher instance from the bundled framework for services and destina
 - Never write a wrapper merely to normalize naming. If a wrapper is unavoidable, place it under `dashboard/adapters/<service-id>/` and use the supplied `PROJECT_ROOT`; reject literal original-project paths in adapters.
 - Implement restart as the verified stop-then-start sequence; do not assume that repeating the start command performs a restart.
 - Add `update` only when the project has a known safe update workflow. Never invent destructive update commands.
+- Treat update as a transactional action. Prevent concurrent start/stop/restart/update actions for the same service, keep the dashboard alive while an action is active, and reject dashboard shutdown until it finishes.
+- Stream update progress with the protocol in `references/configuration.md`; require the verified terminal 100 marker before accepting success, and do not expose raw terminal progress animation in the WebUI log.
 - Put secrets in the machine environment or a service-local ignored env file. Never write secrets into the launcher config.
 - Never back-propagate an instance's `dashboard/launcher.config.json`, `dashboard/registry/`, `dashboard/adapters/`, `dashboard/logs/`, `dashboard/.launcher-instance`, `dashboard/validation-report.json`, or `projects/` into the Skill.
 - Keep the server bound to `127.0.0.1`. Do not weaken the per-session API token check.

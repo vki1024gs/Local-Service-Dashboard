@@ -35,6 +35,18 @@ When a service already exposes structured diagnostics and logs, the optional `ob
 
 Valid categories are `static-web`, `frontend`, `backend`, and `service`. Valid lifecycle actions are `start`, `stop`, and `update`. Commands accept a string, argument array, or `macos`/`windows`/`default` map.
 
+## Update progress protocol
+
+A finite update command may report structured progress on stdout with one JSON object per line:
+
+```text
+LAUNCHER_PROGRESS {"percent":42,"message":"Downloading release…"}
+```
+
+`percent` is an integer from 0 through 100 and must never move backwards. `message` is a short human-readable current stage. The runtime removes protocol records from ordinary output, streams their values through `services[].operation`, and writes compact progress milestones into the service log.
+
+Update scripts should suppress terminal animation such as curl's progress meter. Use a single-flight lock that survives a dashboard restart, a uniquely named temporary file per invocation, validation before replacement, and an atomic rename into the final location. A nonzero exit must preserve the previously installed artifact. Emit 100 only after post-install verification succeeds. The runtime rejects an update that exits zero without this terminal 100 marker, preventing a prematurely terminated script from being reported as successful.
+
 ## Health modes
 
 - `http`: require `url`; use a fixed project-owned health URL.
@@ -77,3 +89,5 @@ Allowed fields are `startup_timeout_seconds`, `stability_seconds`, `shutdown_tim
 ## WebUI client lifetime
 
 Set launcher-level `exit_when_no_clients_seconds` to a positive number when the dashboard backend should exit after the last `/api/events` WebUI stream disconnects. The countdown resets whenever a WebUI reconnects. Keep `stop_services_on_exit=false` when dashboard lifetime must remain independent from business-service lifetime. A value of `0` or an omitted field disables idle exit.
+
+Idle exit is suspended while any finite lifecycle operation is active. Explicit `/api/shutdown` requests are rejected with `action_in_progress` until the operation finishes.

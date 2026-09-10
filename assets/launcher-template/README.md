@@ -9,6 +9,8 @@ This private instance displays and manually controls explicitly registered local
 3. Validate the configuration with the linked framework's validator and `python dashboard/launcher.py --check-config`.
 4. Run complete lifecycle verification when it is safe to start and stop the service.
 
+Update-capable services show live progress on their card. While an update is active, conflicting controls and dashboard exit are disabled. Failures open a readable explanation with a direct link to cleaned action logs.
+
 ## Launch
 
 - macOS: double-click `launch-dashboard.command`.
