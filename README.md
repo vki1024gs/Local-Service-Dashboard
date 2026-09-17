@@ -118,10 +118,11 @@ The lifecycle gate checks start, readiness, stability, stop, second start, inter
 ## Start the dashboard
 
 - macOS: double-click `my-local-dashboard/launch-dashboard.command`.
-- Windows: double-click `my-local-dashboard/launch-dashboard.bat`.
+- Windows: double-click `my-local-dashboard/launch-dashboard.vbs` for a console-free launch. The `.bat` entrypoint remains as a compatibility fallback and immediately delegates to it.
 - Terminal: run `python3 my-local-dashboard/dashboard/launcher.py`.
 
 The dashboard binds to `127.0.0.1` and uses a per-session API token. The Open action is disabled until its service is ready. Closing the dashboard does not stop business services unless `stop_services_on_exit` was explicitly enabled.
+On Windows, lifecycle commands run without opening a console window; their output remains available in the dashboard logs.
 
 ## Update
 

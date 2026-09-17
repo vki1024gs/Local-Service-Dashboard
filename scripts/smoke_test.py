@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -38,7 +39,33 @@ with tempfile.TemporaryDirectory() as temp:
     assert (destination / "launcher-skill").exists() or (destination / "launcher-skill.path.txt").is_file()
     assert (destination / "launch-dashboard.command").is_file()
     assert (destination / "launch-dashboard.bat").is_file()
+    windows_launcher = destination / "launch-dashboard.vbs"
+    assert windows_launcher.is_file()
+    assert "pythonw.exe" in windows_launcher.read_text(encoding="utf-8").lower()
+    batch_launcher = (destination / "launch-dashboard.bat").read_text(encoding="utf-8").lower()
+    assert "wscript.exe" in batch_launcher
+    assert "dashboard\\launcher.py" not in batch_launcher
     assert (destination / "README.md").is_file()
+    if sys.platform == "win32":
+        launch_marker = destination / "windows-launch-ok.txt"
+        (destination / "dashboard" / "launcher.py").write_text(
+            "import os, tempfile\n"
+            "from pathlib import Path\n"
+            "os.chdir(tempfile.gettempdir())\n"
+            f"Path({str(launch_marker)!r}).write_text('ok', encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+        windows_launch = subprocess.run(
+            ["cscript.exe", "//nologo", str(windows_launcher)],
+            capture_output=True,
+            text=True,
+        )
+        assert windows_launch.returncode == 0, windows_launch.stdout + windows_launch.stderr
+        deadline = time.monotonic() + 5
+        while not launch_marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert launch_marker.read_text(encoding="utf-8") == "ok"
+        time.sleep(0.5)
 print("OK: English-only materialized framework structure")
 spec = importlib.util.spec_from_file_location("launcher", LAUNCHER)
 launcher = importlib.util.module_from_spec(spec)
@@ -76,6 +103,15 @@ with tempfile.TemporaryDirectory() as temp:
     assert manager.services["probe"]["env"]["PROJECT_ROOT"] == str(project)
     assert manager.start("probe")["running"]
     assert manager.stop("probe")["running"] is False
+    if sys.platform == "win32":
+        with mock.patch.object(launcher.subprocess, "Popen") as popen:
+            popen.return_value.pid = 1234
+            popen.return_value.poll.return_value = None
+            manager.start("probe")
+            creationflags = popen.call_args.kwargs["creationflags"]
+            manager.logs["probe"].close()
+            assert creationflags & subprocess.CREATE_NEW_PROCESS_GROUP
+            assert creationflags & subprocess.CREATE_NO_WINDOW
 print("OK: launcher process lifecycle")
 
 with tempfile.TemporaryDirectory() as temp:

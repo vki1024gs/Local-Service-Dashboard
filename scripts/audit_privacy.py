@@ -11,7 +11,7 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = SKILL_ROOT / "assets" / "launcher-template"
 ABSOLUTE_USER_PATH = re.compile(r"(?:/Users/|/home/|[A-Za-z]:\\Users\\)")
 TEXT_SUFFIXES = {".md", ".json", ".yaml", ".yml", ".toml", ".txt", ".py", ".js", ".css",
-                 ".html", ".bat", ".command", ".sh", ".ps1"}
+                 ".html", ".bat", ".vbs", ".command", ".sh", ".ps1"}
 PRIVATE_ARTIFACT_SUFFIXES = {".log", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".mov", ".pdf"}
 
 
@@ -51,7 +51,7 @@ def main() -> int:
     if any(TEMPLATE.rglob(".launcher-instance")):
         errors.append("template must not contain .launcher-instance")
     for required in ("dashboard", "projects", "README.md", "ARCHITECTURE.md", "AGENTS.md",
-                     "launch-dashboard.command", "launch-dashboard.bat"):
+                     "launch-dashboard.command", "launch-dashboard.bat", "launch-dashboard.vbs"):
         if not (TEMPLATE / required).exists():
             errors.append(f"template is missing required English structure: {required}")
     if errors:

@@ -9,6 +9,7 @@ launcher/
 ├── README.md
 ├── launch-dashboard.command
 ├── launch-dashboard.bat
+├── launch-dashboard.vbs
 ├── launcher-skill -> <installed-skill>
 ├── projects/
 └── dashboard/
@@ -24,7 +25,7 @@ launcher/
     └── validation-report.json
 ```
 
-All path names are English. Root files are entrypoints and documentation; implementation and runtime state stay inside `dashboard`, while project shortcuts stay inside `projects`.
+All path names are English. Root files are entrypoints and documentation; implementation and runtime state stay inside `dashboard`, while project shortcuts stay inside `projects`. On Windows, the VBScript entrypoint starts the dashboard without a console window and the batch entrypoint delegates to it.
 
 ## Boundaries
 

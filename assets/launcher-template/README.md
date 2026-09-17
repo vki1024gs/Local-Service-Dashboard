@@ -14,7 +14,7 @@ Update-capable services show live progress on their card. While an update is act
 ## Launch
 
 - macOS: double-click `launch-dashboard.command`.
-- Windows: double-click `launch-dashboard.bat`.
+- Windows: double-click `launch-dashboard.vbs` for a console-free launch. The `.bat` entrypoint remains as a compatibility fallback and immediately delegates to it.
 
 ## Layout
 

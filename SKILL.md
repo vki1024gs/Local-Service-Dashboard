@@ -48,7 +48,7 @@ Create one launcher instance from the bundled framework for services and destina
 11. Run the drift test from `framework.md` when project-owned name or port bindings are configured. Also verify that declared duplicate ports mark every affected service and identify the conflicting service; do not treat this declaration warning as proof that an unknown process owns the port.
 12. Run `python <destination>/dashboard/launcher.py --check-config`, then start it with `python <destination>/dashboard/launcher.py --no-browser` and verify the API/UI if execution is safe.
 13. Run `python scripts/audit_privacy.py` against the reusable Skill and require it to pass.
-14. Tell the user how to launch the instance and report lifecycle, monitoring, drift, and privacy-audit results: `launch-dashboard.command` on macOS or `launch-dashboard.bat` on Windows.
+14. Tell the user how to launch the instance and report lifecycle, monitoring, drift, and privacy-audit results: `launch-dashboard.command` on macOS or the console-free `launch-dashboard.vbs` on Windows (`launch-dashboard.bat` is a compatibility fallback).
 
 ## Configuration rules
 
