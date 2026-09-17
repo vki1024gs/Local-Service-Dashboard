@@ -53,6 +53,7 @@ Update scripts should suppress terminal animation such as curl's progress meter.
 - `tcp`: require `port`; use a fixed port only when the project has no dynamic source.
 - `env`: require `port_key`; optionally set `env_file` (default `.env`), `scheme`, `host`, `path`, and `fallback_port`. The monitor rereads the file. Use `fallback_port` only when the project-owned start command has a documented default for a missing environment variable; an explicit environment value always wins.
 - `auto`: discover the most recent localhost URL printed in the launcher-owned log; optionally provide `fallback_url` or `fallback_port`.
+- `command`: run a project-owned, read-only readiness command in the registered project directory. Exit code `0` means ready; any other exit code, launch error, or timeout means unhealthy. Use this when a listening socket does not prove that an internal runtime initialized successfully. An optional documented `port` is display-only and does not weaken command readiness.
 
 For HTTP endpoints whose access log would be noisy under real-time monitoring, set `http_probe_interval_seconds` to a positive interval. The monitor then uses a lightweight TCP connection on every dashboard sample and performs the full HTTP request only when the interval expires. A TCP failure is reported immediately, and a failed HTTP result is retried on the next sample rather than cached. Leave the field unset or set it to `0` when every sample must execute the application-level HTTP probe.
 

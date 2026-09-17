@@ -76,8 +76,9 @@
           "health": {
             "type": "object", "additionalProperties": false, "required": ["mode"],
             "properties": {
-              "mode": {"enum": ["http", "tcp", "env", "auto"]},
+              "mode": {"enum": ["http", "tcp", "env", "auto", "command"]},
               "url": {"type": "string"}, "host": {"type": "string"}, "port": {"type": "integer"},
+              "command": {"$ref": "#/$defs/command"},
               "timeout_seconds": {"type": "number"}, "env_file": {"type": "string"},
               "port_key": {"type": "string"}, "scheme": {"enum": ["http", "https", "tcp"]},
               "path": {"type": "string"}, "fallback_url": {"type": "string"},
@@ -86,7 +87,8 @@
             "allOf": [
               {"if": {"properties": {"mode": {"const": "http"}}}, "then": {"required": ["url"]}},
               {"if": {"properties": {"mode": {"const": "tcp"}}}, "then": {"required": ["port"]}},
-              {"if": {"properties": {"mode": {"const": "env"}}}, "then": {"required": ["port_key"]}}
+              {"if": {"properties": {"mode": {"const": "env"}}}, "then": {"required": ["port_key"]}},
+              {"if": {"properties": {"mode": {"const": "command"}}}, "then": {"required": ["command"]}}
             ]
           },
           "url": {"type": "string"},

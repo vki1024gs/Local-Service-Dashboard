@@ -133,6 +133,37 @@ print("OK: environment port fallback and later override")
 
 with tempfile.TemporaryDirectory() as temp:
     root = Path(temp)
+    project = root / "project"
+    project.mkdir()
+    registry = root / "registry" / "projects"
+    registry.mkdir(parents=True)
+    (registry / "command.path.json").write_text(json.dumps({"target": str(project)}), encoding="utf-8")
+    path = root / "launcher.config.json"
+    probe = "import pathlib,sys;sys.exit(0 if pathlib.Path('ready').exists() else 1)"
+    path.write_text(json.dumps({"schema_version": 1, "launcher": {}, "services": [{
+        "id": "command", "category": "service", "project_ref": "command",
+        "display": {"name": "Command health fixture"},
+        "lifecycle": {"start": [sys.executable, "-c", "pass"]},
+        "health": {"mode": "command", "command": [sys.executable, "-c", probe],
+                   "port": 54323, "timeout_seconds": 1},
+        "url": "http://127.0.0.1:54323/",
+    }]}), encoding="utf-8")
+    validation = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "validate_config.py"), str(path)],
+        capture_output=True, text=True,
+    )
+    assert validation.returncode == 0, validation.stdout + validation.stderr
+    launcher.LOG_DIR = root / "logs"
+    manager = launcher.ServiceManager(launcher.load_config(path))
+    service = manager.services["command"]
+    assert not manager._ready(service)
+    (project / "ready").write_text("ready\n", encoding="utf-8")
+    assert manager._ready(service)
+    assert manager.service_port(service) == 54323
+print("OK: project-owned command readiness and display-only port")
+
+with tempfile.TemporaryDirectory() as temp:
+    root = Path(temp)
     first = root / "first"
     second = root / "second"
     first.mkdir()

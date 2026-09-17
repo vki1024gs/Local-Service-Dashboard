@@ -7,6 +7,7 @@ Keep the WebUI observational. It may invoke lifecycle commands only after explic
 - Stream service snapshots continuously from `/api/events`; do not rely on manual refresh.
 - Use `launcher.monitor_interval_seconds` between 0.25 and 5 seconds; default to 1 second.
 - Probe all configured services concurrently so one slow health endpoint does not delay unrelated cards.
+- Treat a project-owned command probe like any other readiness source: run it in the registered project directory with the configured timeout, discard its routine output, and never replace it with a weaker TCP result merely to display a port.
 - Allow HTTP services to use lightweight TCP checks between less frequent full HTTP probes, so real-time dashboards do not flood project-owned access logs. Never cache a failed HTTP result for the full interval.
 - Show stream connectivity, last sample time, healthy/problem/stopped counts, last transition time, and a bounded transition history. Keep launcher-owned PID available to diagnostics when present, but do not reserve primary card space for it because externally managed services legitimately report no PID.
 - Show an active finite operation directly on its service card, including its stage and determinate percentage when supplied. Update the existing progress elements in place so frequent samples do not recreate a hovered card.

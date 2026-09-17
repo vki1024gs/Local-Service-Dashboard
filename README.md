@@ -94,6 +94,8 @@ Edit `my-local-dashboard/dashboard/launcher.config.json`. Start from the bundled
 
 Only add `lifecycle.update` when the project already has a known safe update procedure. The dashboard runs configured commands, so treat this file as executable local configuration. Never store secrets in it.
 
+Choose a health probe that represents usable service behavior. A listening TCP port is insufficient when an internal runtime can fail after the socket opens; use application-level HTTP or a project-owned, read-only `health.mode: "command"` probe in that case.
+
 For services with multiple endpoints, declare `ports` so the dashboard can show every documented port and flag duplicate declarations. See [Configuration reference](references/configuration.md) and [JSON schema](references/configuration.schema.json).
 
 ## Validate before launch

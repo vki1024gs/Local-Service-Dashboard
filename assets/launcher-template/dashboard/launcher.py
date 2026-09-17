@@ -587,6 +587,8 @@ class ServiceManager:
             if health.get("fallback_port"):
                 return ("tcp", (health.get("host", "127.0.0.1"), int(health["fallback_port"])))
             return None
+        if mode == "command":
+            return None
         if health.get("url"):
             return ("http", health["url"])
         if health.get("port"):
@@ -608,6 +610,9 @@ class ServiceManager:
         return endpoint[1] if endpoint and endpoint[0] == "http" else None
 
     def service_port(self, service: dict[str, Any]) -> int | None:
+        health = service.get("health", {})
+        if health.get("mode") == "command" and health.get("port") is not None:
+            return int(health["port"])
         endpoint = self._health_endpoint(service)
         if endpoint is None:
             return None
@@ -660,6 +665,23 @@ class ServiceManager:
             service["_last_observability_health"] = observed
             return bool(observed.get("ready") or observed.get("status") == "ready")
         health = service.get("health", {})
+        if health.get("mode") == "command":
+            command = select_command(health.get("command"))
+            if command is None:
+                return False
+            env = os.environ.copy()
+            env.update({str(k): str(v) for k, v in service.get("env", {}).items()})
+            try:
+                with self.health_locks[service["id"]]:
+                    result = subprocess.run(
+                        command, cwd=service["cwd"], env=env,
+                        shell=isinstance(command, str), stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=float(health.get("timeout_seconds", 2)), check=False,
+                    )
+                return result.returncode == 0
+            except (OSError, subprocess.TimeoutExpired, ValueError):
+                return False
         endpoint = self._health_endpoint(service)
         if endpoint is None:
             return False

@@ -31,7 +31,8 @@ Create one launcher instance from the bundled framework for services and destina
 2. Inspect only the specified service paths.
    - Identify the real working directory, start command, every documented listening port, the readiness endpoint, the user-facing open URL, update command, and shutdown behavior.
    - Read port values only from project-owned documentation, environment examples/current local env, manifests, lifecycle scripts, or explicit user input. Do not infer or discover additional ports from the machine.
-   - Treat readiness, navigation, and port inventory as separate facts: `health` decides service state, `url` decides the Open action, and optional `ports` exposes declared endpoints and configuration conflicts.
+- Treat readiness, navigation, and port inventory as separate facts: `health` decides service state, `url` decides the Open action, and optional `ports` exposes declared endpoints and configuration conflicts.
+- Prefer application-level HTTP or project-owned `command` health when a listening socket can exist before an internal runtime is usable; use bare TCP only when socket acceptance is the service's real readiness contract.
    - Inspect relevant package scripts, existing `.command`/`.bat` files, compose files, and health endpoints only inside those paths. Do not guess or broaden the search.
    - Reuse working lifecycle scripts already present in the specified path. Wrap or replace them only when validation proves they cannot meet the lifecycle contract.
 3. Read [references/framework.md](references/framework.md), then materialize the framework with `python scripts/create_launcher.py <exact-destination>`. Do not manually edit or copy project data into the Skill template.

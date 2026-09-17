@@ -6,7 +6,7 @@ Use this gate after configuration and whenever a lifecycle command changes. Vali
 
 1. Verify only paths explicitly supplied by the user.
 2. Confirm that interrupting the service is safe. If it is already healthy before the test, stop and request a test window; never terminate an unidentified process.
-3. Require `health.url` or `health.port`. Process existence alone cannot prove localhost readiness.
+3. Require a real readiness contract: application-level HTTP, a project-owned command, or a TCP port only when socket acceptance itself means usable. Process existence alone cannot prove readiness.
 4. Prefer existing scripts from the specified path. Record them as `start` and, when needed, `stop`; do not rewrite a script merely for stylistic consistency.
 
 ## Required sequence

@@ -43,7 +43,7 @@ The repository itself must remain synthetic and portable. A generated instance l
 
 The generated Python process serves a localhost WebUI and JSON API, supervises only processes started through the dashboard, and probes only explicitly configured health endpoints. Readiness is authoritative; a launcher-owned PID is optional.
 
-`health` answers whether a service is ready. `url` supplies the primary Open destination. `ports` is a declared endpoint inventory used to expose potential configuration conflicts. These concepts remain separate.
+`health` answers whether a service is ready. It may use an application endpoint, dynamic environment binding, reliable discovered URL, bare TCP only when socket acceptance is sufficient, or a project-owned command for deeper readiness. `url` supplies the primary Open destination. `ports` is a declared endpoint inventory used to expose potential configuration conflicts. These concepts remain separate.
 
 The monitor reports unexpected stops and later recovery. It does not automatically restart services or scan the machine for unknown projects, ports, or processes.
 

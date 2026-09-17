@@ -69,7 +69,7 @@ Project-owned update scripts provide the second safety layer. They must reject c
 1. Treat project-owned lifecycle scripts and manifests as authoritative.
 2. Run lifecycle commands with the registered project as `cwd`; keep commands relative, such as `["npm", "run", "dev"]` or `["./start.command"]`.
 3. Supply the resolved target as `PROJECT_ROOT` automatically. Never duplicate its absolute value in commands or adapters.
-4. Prefer `health.mode=env` when the project owns its port in `.env`; the dashboard rereads it while monitoring.
+4. Prefer `health.mode=env` when the project owns its port in `.env`; the dashboard rereads it while monitoring. When socket acceptance is weaker than real application readiness, use an application-level HTTP endpoint or a project-owned, read-only `health.mode=command` probe.
 5. Prefer `display.name_from` when a JSON manifest owns the project name; the dashboard rereads it while monitoring.
 6. Use `health.mode=auto` only when the project reliably prints its localhost URL. Use fixed HTTP/TCP health only when no project-owned dynamic source exists.
 7. If an adapter is unavoidable, place it under `dashboard/adapters/<service-id>/`, make it call the project through `PROJECT_ROOT`, and keep project constants out of it.

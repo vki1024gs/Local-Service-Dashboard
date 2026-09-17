@@ -24,6 +24,7 @@ Read `SKILL.md`, `ARCHITECTURE.md`, and the relevant file under `references/` be
 
 - Preserve the fixed schema and localhost-only, token-protected runtime.
 - Keep readiness, Open URL, and declared port inventory separate.
+- Prefer application-level HTTP or a project-owned command health check over bare TCP when a process can listen before its internal runtime is usable.
 - Do not add project discovery, arbitrary command editing, port reservation, or automatic restart.
 - Update runtime, validator, schema/reference docs, synthetic tests, and README together when behavior changes.
 - Keep Python runtime dependencies standard-library-only unless a maintainer explicitly changes that policy.

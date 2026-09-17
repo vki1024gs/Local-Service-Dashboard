@@ -18,7 +18,7 @@ DISPLAY_FIELDS = {"name", "description", "name_from"}
 NAME_FROM_FIELDS = {"file", "json_path"}
 LIFECYCLE_FIELDS = {"start", "stop", "update"}
 HEALTH_FIELDS = {"mode", "url", "host", "port", "timeout_seconds", "env_file", "port_key", "scheme",
-                 "path", "fallback_url", "fallback_port", "http_probe_interval_seconds"}
+                 "path", "fallback_url", "fallback_port", "http_probe_interval_seconds", "command"}
 VALIDATION_FIELDS = {"startup_timeout_seconds", "stability_seconds", "shutdown_timeout_seconds",
                      "poll_interval_seconds", "action_timeout_seconds", "monitor_detection_timeout_seconds"}
 OBSERVABILITY_FIELDS = {"mode", "url", "host", "env_file", "port_key", "scheme", "path",
@@ -167,14 +167,16 @@ def validate(path: Path) -> list[str]:
             health = {}
         unknown_fields(health, HEALTH_FIELDS, f"{label}.health", errors)
         mode = health.get("mode")
-        if mode not in {"http", "tcp", "env", "auto"}:
-            errors.append(f"{label}.health.mode must be http, tcp, env, or auto")
+        if mode not in {"http", "tcp", "env", "auto", "command"}:
+            errors.append(f"{label}.health.mode must be http, tcp, env, auto, or command")
         elif mode == "http" and not isinstance(health.get("url"), str):
             errors.append(f"{label}.health.url is required for http mode")
         elif mode == "tcp" and not isinstance(health.get("port"), int):
             errors.append(f"{label}.health.port is required for tcp mode")
         elif mode == "env" and not isinstance(health.get("port_key"), str):
             errors.append(f"{label}.health.port_key is required for env mode")
+        elif mode == "command":
+            validate_command(health.get("command"), f"{label}.health.command", errors)
         if "fallback_port" in health and not isinstance(health["fallback_port"], int):
             errors.append(f"{label}.health.fallback_port must be an integer")
         http_interval = health.get("http_probe_interval_seconds", 0)
