@@ -6,7 +6,10 @@
       "id": "example-frontend",
       "category": "frontend",
       "project_ref": "example-frontend",
-      "display": {"name": "Example frontend"},
+      "display": {
+        "name": "Example frontend",
+        "version_from": {"file": "package.json", "key_path": "version", "prefix": "v"}
+      },
       "lifecycle": {"start": ["npm", "run", "dev"]},
       "health": {"mode": "env", "env_file": ".env", "port_key": "WEB_PORT", "scheme": "http"},
       "url": "auto"

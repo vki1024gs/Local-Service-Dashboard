@@ -18,6 +18,11 @@
         "name_from": {
           "file": "package.json",
           "json_path": "name"
+        },
+        "version_from": {
+          "file": "package.json",
+          "key_path": "version",
+          "prefix": "v"
         }
       },
       "lifecycle": {

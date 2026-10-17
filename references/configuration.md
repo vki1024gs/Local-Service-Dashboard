@@ -9,7 +9,11 @@ Workspace `launcher.config.json` is executable local configuration. `scripts/val
   "id": "example-web",
   "category": "frontend",
   "project_ref": "example-web",
-  "display": {"name": "Example Web", "name_from": {"file": "package.json", "json_path": "name"}},
+  "display": {
+    "name": "Example Web",
+    "name_from": {"file": "package.json", "json_path": "name"},
+    "version_from": {"file": "package.json", "key_path": "version", "prefix": "v"}
+  },
   "lifecycle": {"start": ["npm", "run", "dev"], "stop": ["npm", "run", "stop"]},
   "health": {"mode": "env", "env_file": ".env", "port_key": "PORT", "scheme": "http", "path": "/health"},
   "url": {"mode": "env", "env_file": ".env", "port_key": "WEB_PORT", "scheme": "http", "path": "/"},
@@ -29,6 +33,18 @@ Categories are `static-web`, `frontend`, `backend`, and `service`. Commands acce
 - `ports` reports user-relevant endpoints and declared collisions. Use concrete role labels such as `WebUI`, `API`, or `Bridge`.
 - `lifecycle.update` exists only for a known safe update workflow.
 - registration repository metadata supplies informational upstream state and is not part of the descriptor.
+
+## Version label
+
+`display.version_from` adds the restrained version label shown on a service card. It reads a project-owned JSON or TOML manifest on every monitoring sample, so a successful project update changes the label without editing Dashboard configuration or restarting the Dashboard.
+
+- `file` is required and must remain inside the registered project.
+- `format` is optional (`json` or `toml`); when omitted, the `.json` or `.toml` file suffix selects the parser.
+- `key_path` is a dot-separated key path and defaults to `version` (for example, `project.version` in `pyproject.toml`).
+- `prefix` is optional, limited to eight characters, and is commonly `v`.
+- The resolved value must be a non-empty string of at most 64 characters. Missing, invalid, numeric, or oversized values hide the label instead of making the service unhealthy.
+
+Use the application/package version as this source. Do not place a Git commit, remote comparison, or manually copied release value here: registration repository status remains a separate source-control contract.
 
 An env binding may use `env_file`, `port_key`, `fallback_port`, `scheme`, `host`, and `path`. Paths must stay inside the registered project. A port is 1–65535. An explicit environment value wins over a documented fallback. `ports[].editable: false` is accepted as an explicit read-only declaration; this framework deliberately does not mutate a registered project's environment file from the browser.
 

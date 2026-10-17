@@ -62,6 +62,8 @@ function card(service) {
   const state = service.state || (service.ready ? "ready" : service.running ? "starting" : "stopped");
   const operation = service.operation;
   const ports = service.ports?.length ? service.ports : (service.port == null ? [] : [{name:"端口", port:service.port}]);
+  const versionTag = service.version
+    ? `<span class="version-tag" title="项目声明版本">${esc(service.version)}</span>` : "";
   const portTags = ports.map(port => {
     const detail = port.conflict ? `，与 ${port.conflicts_with.join("、")} 冲突` : "";
     return `<span class="kind ${port.conflict?"port-conflict":""}" title="${esc(`${port.name} ${port.port}${detail}`)}">${esc(port.name)} ${esc(port.port)}</span>`;
@@ -86,7 +88,7 @@ function card(service) {
     service.can_update && !service.running && !operation ? `<button data-action="update">更新</button>` : ""
   ].join("");
   return `<article class="card state-${esc(state)} ${hasIssue(service)?"has-problem":""}" data-id="${esc(service.id)}">
-    <div class="top"><div class="card-title"><div class="port-list">${portTags}</div><h3>${esc(service.name)}</h3></div><span class="status ${operation?"updating":esc(state)}"><i class="dot"></i>${operation?"更新中":esc(labels[state] || state)}</span></div>
+    <div class="top"><div class="card-title"><div class="port-list">${versionTag}${portTags}</div><h3>${esc(service.name)}</h3></div><span class="status ${operation?"updating":esc(state)}"><i class="dot"></i>${operation?"更新中":esc(labels[state] || state)}</span></div>
     <p class="desc">${esc(service.description || "")}</p>${repositoryNotice(service.repository)}${alerts}${checks}${operationBox}
     <div class="meta"><span><small>最近变更</small><strong>${service.last_change_at ? dateTime(service.last_change_at) : "—"}</strong></span></div>
     <div class="actions">${openAction}${startAction}<details class="action-menu"><summary aria-label="更多操作">更多</summary><div class="action-menu-panel">${menuActions}</div></details></div>
@@ -95,7 +97,7 @@ function card(service) {
 
 function cardRenderSignature(services) {
   return JSON.stringify(services.map(service => ({
-    id: service.id, name: service.name, description: service.description, ports: service.ports,
+    id: service.id, name: service.name, version: service.version, description: service.description, ports: service.ports,
     url: service.url, can_update: service.can_update, running: service.running, ready: service.ready,
     state: service.state, problem: service.problem, port_conflicts: service.port_conflicts, last_change_at: service.last_change_at,
     repository: service.repository ? {state:service.repository.state, dirty:service.repository.dirty, url:service.repository.url} : null,

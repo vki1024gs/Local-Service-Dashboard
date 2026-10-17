@@ -61,6 +61,7 @@ Each service uses a registered `project_ref`. It declares separate concerns:
 - `ports`: user-relevant endpoint roles and collision warnings;
 - `lifecycle`: explicit start, stop, restart, and optional update behavior;
 - registration `repository`: optional informational upstream check.
+- `display.version_from`: optional project-owned JSON/TOML version shown as a small card label.
 
 Repository checks use bounded `git ls-remote` and local read-only commands. They never fetch, pull, merge, checkout, or change refs. An unequal revision is shown as “远端版本不同” unless local ancestry already proves “有更新”, “领先”, or “已分叉”. A repository warning does not make a healthy service unhealthy and never creates an Update action.
 

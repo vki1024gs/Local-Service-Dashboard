@@ -275,13 +275,19 @@ with tempfile.TemporaryDirectory() as temp:
     root = Path(temp)
     project = root / "project"
     project.mkdir()
-    (project / "package.json").write_text('{"name":"alpha-ui"}', encoding="utf-8")
+    (project / "package.json").write_text(
+        '{"name":"alpha-ui","version":"1.2.3"}', encoding="utf-8"
+    )
     (project / ".env").write_text("PORT=3100\n", encoding="utf-8")
     register_fixture(root, "web", project)
     path = root / "launcher.config.json"
     path.write_text(json.dumps({"schema_version": 1, "launcher": {}, "services": [{
         "id": "web", "category": "frontend", "project_ref": "web",
-        "display": {"name": "fallback", "name_from": {"file": "package.json", "json_path": "name"}},
+        "display": {
+            "name": "fallback",
+            "name_from": {"file": "package.json", "json_path": "name"},
+            "version_from": {"file": "package.json", "key_path": "version", "prefix": "v"},
+        },
         "lifecycle": {"start": [sys.executable, "-c", "pass"]},
         "health": {"mode": "env", "env_file": ".env", "port_key": "PORT", "scheme": "http"},
         "url": "auto"
@@ -290,11 +296,22 @@ with tempfile.TemporaryDirectory() as temp:
     manager = launcher.ServiceManager(launcher.load_config(path))
     service = manager.services["web"]
     assert manager._display_name(service) == "alpha-ui"
+    assert manager._display_version(service) == "v1.2.3"
     assert manager.service_url(service) == "http://127.0.0.1:3100/"
-    (project / "package.json").write_text('{"name":"beta-ui"}', encoding="utf-8")
+    (project / "package.json").write_text(
+        '{"name":"beta-ui","version":"2.0.0-beta.1"}', encoding="utf-8"
+    )
     (project / ".env").write_text("PORT=4200\n", encoding="utf-8")
     assert manager._display_name(service) == "beta-ui"
+    assert manager._display_version(service) == "v2.0.0-beta.1"
     assert manager.service_url(service) == "http://127.0.0.1:4200/"
+    (project / "pyproject.toml").write_text(
+        '[project]\nname = "beta-ui"\nversion = "2.1.0"\n', encoding="utf-8"
+    )
+    service["display"]["version_from"] = {
+        "file": "pyproject.toml", "key_path": "project.version", "prefix": "v"
+    }
+    assert manager._display_version(service) == "v2.1.0"
 print("OK: project-owned name and port drift")
 
 with tempfile.TemporaryDirectory() as temp:

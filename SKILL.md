@@ -35,6 +35,7 @@ This repository is the application and the canonical Agent kit. Real instance da
 - Use argument arrays where possible and keep commands relative to the registered project root.
 - Prefer application-level HTTP or project-owned command readiness. Use TCP only when accepting a socket is the true contract.
 - Use concrete port role labels such as `WebUI`, `API`, or `Bridge`, never vague visible labels such as “backend” or “service”.
+- When a card should show an application version, bind `display.version_from` to a project-owned JSON/TOML version field. Never duplicate the value manually or confuse it with Git upstream status.
 - Duplicate declared ports are configuration risks. Report every affected service without claiming an unknown OS process owns the port.
 - Add Update only for a known safe project-owned workflow. It must be single-flight, emit `LAUNCHER_PROGRESS`, stage unique temporary output, validate it, and atomically replace the target.
 - Restart is verified stop then start. Never kill an unidentified listener or infer ownership from a PID alone.

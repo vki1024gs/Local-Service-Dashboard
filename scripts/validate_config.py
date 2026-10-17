@@ -22,8 +22,9 @@ LAUNCHER_FIELDS = {"title", "host", "port", "monitor_interval_seconds", "stop_se
                    "exit_when_no_clients_seconds", "repository_check_interval_seconds"}
 SERVICE_FIELDS = {"id", "category", "project_ref", "display", "lifecycle", "health", "url", "env",
                   "open_on_start", "validation", "observability", "ports"}
-DISPLAY_FIELDS = {"name", "description", "name_from"}
+DISPLAY_FIELDS = {"name", "description", "name_from", "version_from"}
 NAME_FROM_FIELDS = {"file", "json_path"}
+VERSION_FROM_FIELDS = {"file", "format", "key_path", "prefix"}
 LIFECYCLE_FIELDS = {"start", "stop", "update"}
 HEALTH_FIELDS = {"mode", "url", "host", "port", "timeout_seconds", "env_file", "port_key", "scheme",
                  "path", "fallback_url", "fallback_port", "http_probe_interval_seconds", "command"}
@@ -150,6 +151,35 @@ def validate(path: Path) -> list[str]:
                     errors.append(f"{label}.display.name_from.file is required")
                 elif Path(name_from["file"]).is_absolute() or ".." in Path(name_from["file"]).parts:
                     errors.append(f"{label}.display.name_from.file must stay inside the project")
+        version_from = display.get("version_from")
+        if version_from is not None:
+            if not isinstance(version_from, dict):
+                errors.append(f"{label}.display.version_from must be an object")
+            else:
+                unknown_fields(version_from, VERSION_FROM_FIELDS,
+                               f"{label}.display.version_from", errors)
+                version_file = version_from.get("file")
+                if not isinstance(version_file, str):
+                    errors.append(f"{label}.display.version_from.file is required")
+                elif (Path(version_file).is_absolute()
+                      or ".." in Path(version_file).parts):
+                    errors.append(f"{label}.display.version_from.file must stay inside the project")
+                elif (version_from.get("format") is None
+                      and Path(version_file).suffix.lower() not in {".json", ".toml"}):
+                    errors.append(
+                        f"{label}.display.version_from.file needs a .json/.toml suffix or explicit format"
+                    )
+                if version_from.get("format") not in {None, "json", "toml"}:
+                    errors.append(f"{label}.display.version_from.format must be json or toml")
+                key_path = version_from.get("key_path", "version")
+                if not isinstance(key_path, str) or not key_path or any(
+                    not part for part in key_path.split(".")
+                ):
+                    errors.append(f"{label}.display.version_from.key_path must be a dotted key path")
+                prefix = version_from.get("prefix", "")
+                if (not isinstance(prefix, str) or len(prefix) > 8
+                        or any(character in prefix for character in ("\n", "\r", "\0"))):
+                    errors.append(f"{label}.display.version_from.prefix must be a short string")
 
         lifecycle = service.get("lifecycle")
         if not isinstance(lifecycle, dict):

@@ -23,6 +23,11 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 compatibility.
+    tomllib = None  # type: ignore[assignment]
+
 sys.dont_write_bytecode = True
 
 from project_registry import load_registration, resolve_project_ref as resolve_registered_project
@@ -40,6 +45,32 @@ PROGRESS_PREFIX = "LAUNCHER_PROGRESS "
 CURL_PROGRESS_RE = re.compile(
     r"^\s*\d{1,3}\s+\S+\s+\d{1,3}\s+\S+\s+\d{1,3}\s+\S+\s+\d{1,3}\s+\S+\s+"
 )
+TOML_TABLE_RE = re.compile(r"^\[([A-Za-z0-9_.-]+)\]\s*(?:#.*)?$")
+
+
+def read_basic_toml_string(path: Path, key_path: str) -> str:
+    """Read a conventional table/string key when Python predates tomllib."""
+    parts = key_path.split(".")
+    wanted_table = ".".join(parts[:-1])
+    wanted_key = re.escape(parts[-1])
+    value_re = re.compile(
+        rf"^{wanted_key}\s*=\s*(\"(?:\\.|[^\"\\])*\"|'[^']*')\s*(?:#.*)?$"
+    )
+    current_table = ""
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        table_match = TOML_TABLE_RE.fullmatch(line)
+        if table_match:
+            current_table = table_match.group(1)
+            continue
+        if current_table != wanted_table:
+            continue
+        value_match = value_re.fullmatch(line)
+        if not value_match:
+            continue
+        literal = value_match.group(1)
+        return json.loads(literal) if literal.startswith('"') else literal[1:-1]
+    raise KeyError(key_path)
 
 
 class ActionError(RuntimeError):
@@ -528,6 +559,38 @@ class ServiceManager:
                 pass
         return str(display.get("name", service["id"]))
 
+    def _display_version(self, service: dict[str, Any]) -> str | None:
+        source = service.get("display", {}).get("version_from")
+        if not isinstance(source, dict):
+            return None
+        try:
+            path = self._project_file(service, source["file"])
+            document_format = source.get("format") or path.suffix.lower().removeprefix(".")
+            if document_format == "json":
+                value: Any = json.loads(path.read_text(encoding="utf-8"))
+            elif document_format == "toml":
+                if tomllib is None:
+                    value = read_basic_toml_string(path, source.get("key_path", "version"))
+                    key_parts: list[str] = []
+                else:
+                    with path.open("rb") as handle:
+                        value = tomllib.load(handle)
+                    key_parts = source.get("key_path", "version").split(".")
+            else:
+                return None
+            if document_format == "json":
+                key_parts = source.get("key_path", "version").split(".")
+            for part in key_parts:
+                value = value[part]
+            if not isinstance(value, str):
+                return None
+            value = value.strip()
+            if not value or len(value) > 64 or any(character in value for character in ("\n", "\r", "\0")):
+                return None
+            return str(source.get("prefix", "")) + value
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+            return None
+
     def _env_value(self, service: dict[str, Any], filename: str, key: str) -> str | None:
         try:
             lines = self._project_file(service, filename).read_text(encoding="utf-8").splitlines()
@@ -786,6 +849,7 @@ class ServiceManager:
         services = list(self.services.values())
         statuses = list(self.status_pool.map(lambda item: self.status(item["id"]), services))
         names = {service["id"]: self._display_name(service) for service in services}
+        versions = {service["id"]: self._display_version(service) for service in services}
         ports = {service["id"]: self.service_ports(service) for service in services}
         owners: dict[int, set[str]] = {}
         for service in services:
@@ -795,6 +859,7 @@ class ServiceManager:
         for service, status in zip(services, statuses):
             item = {key: service.get(key) for key in ("id", "description", "kind")}
             item["name"] = names[service["id"]]
+            item["version"] = versions[service["id"]]
             item["url"] = self.service_url(service)
             item["port"] = self.service_port(service)
             item["ports"] = []

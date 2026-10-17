@@ -63,6 +63,15 @@
               "name_from": {
                 "type": "object", "additionalProperties": false, "required": ["file"],
                 "properties": {"file": {"type": "string"}, "json_path": {"type": "string"}}
+              },
+              "version_from": {
+                "type": "object", "additionalProperties": false, "required": ["file"],
+                "properties": {
+                  "file": {"type": "string"},
+                  "format": {"enum": ["json", "toml"]},
+                  "key_path": {"type": "string", "default": "version"},
+                  "prefix": {"type": "string", "maxLength": 8}
+                }
               }
             },
             "anyOf": [{"required": ["name"]}, {"required": ["name_from"]}]

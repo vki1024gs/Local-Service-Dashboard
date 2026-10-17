@@ -273,6 +273,23 @@ h3 { margin: 5px 0 0; font-size: 18px; letter-spacing: -0.02em; line-height: 1.2
   font-weight: 780;
   letter-spacing: 0.13em;
 }
+
+.version-tag {
+  display: inline-flex;
+  align-items: center;
+  max-width: 150px;
+  overflow: hidden;
+  padding: 3px 8px;
+  border: 1px solid #c9d8ce;
+  border-radius: 999px;
+  background: #f3f7f4;
+  color: #3f5f4c;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .kind.port-conflict {
   border-color: #efb7b1;
   background: var(--red-soft);
