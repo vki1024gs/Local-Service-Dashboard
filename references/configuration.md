@@ -34,6 +34,8 @@ Categories are `static-web`, `frontend`, `backend`, and `service`. Commands acce
 - `lifecycle.update` exists only for a known safe update workflow.
 - registration repository metadata supplies informational upstream state and is not part of the descriptor.
 
+Registration repository metadata contains the clone `url`, `branch`, `remote`, and optional HTTP(S) `webUrl`. The registrar infers `webUrl` only from an HTTP(S) clone URL; SSH, filesystem, and other transports need an explicit `--web-url` before the UI offers “远端仓库”. Both URLs reject credentials. The hover detail reports the application version separately from full local/remote Git revisions and the compared branches.
+
 ## Version label
 
 `display.version_from` adds the restrained version label shown on a service card. It reads a project-owned JSON or TOML manifest on every monitoring sample, so a successful project update changes the label without editing Dashboard configuration or restarting the Dashboard.

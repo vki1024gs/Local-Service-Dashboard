@@ -123,6 +123,7 @@ def stage_bundle(bundle: dict, mappings: dict[str, Path], root: Path) -> list[st
             target,
             visible_name=registration.get("visibleName"),
             repository_url=repository.get("url"),
+            repository_web=repository.get("webUrl"),
             branch=repository.get("branch"),
             remote=repository.get("remote", "origin"),
             detect_git=False,
@@ -189,7 +190,8 @@ def import_bundle(path: Path, mappings: dict[str, Path], apply: bool, data_dir: 
                 register_project(
                     registration["projectRef"], mappings[registration["projectRef"]],
                     visible_name=registration.get("visibleName"),
-                    repository_url=repository.get("url"), branch=repository.get("branch"),
+                    repository_url=repository.get("url"), repository_web=repository.get("webUrl"),
+                    branch=repository.get("branch"),
                     remote=repository.get("remote", "origin"), detect_git=False, workspace=workspace,
                     _locked=True,
                 )

@@ -44,7 +44,8 @@ const labels = {
 const problemLabels = {"health-check-failed":"健康检查失败", "stopped-unexpectedly":"意外停止", "startup-timeout":"启动超时"};
 const actionLabels = {start:"启动", stop:"停止", restart:"重启", update:"更新"};
 function hasIssue(service) { return Boolean(service.problem || service.port_conflicts?.length); }
-function repositoryNotice(repository) {
+function shortRevision(value) { return value ? String(value).slice(0, 12) : "—"; }
+function repositoryNotice(repository, applicationVersion) {
   if (!repository) return "";
   const labels = {
     checking:"正在检查版本", update_available:"有更新", ahead:"本地领先",
@@ -55,8 +56,14 @@ function repositoryNotice(repository) {
   if (repository.dirty) parts.push("有未提交修改");
   if (!parts.length) return "";
   const warning = ["update_available", "diverged", "unknown_relation", "unavailable"].includes(repository.state);
-  const title = repository.url ? ` title="${esc(repository.url)}"` : "";
-  return `<div class="repository-notice ${warning?"attention":""}"${title}>${esc(parts.join(" · "))}</div>`;
+  const details = [
+    applicationVersion ? `应用版本：${applicationVersion}` : "",
+    `本地 Git 版本：${shortRevision(repository.local_revision)}`,
+    `远端 Git 版本：${shortRevision(repository.remote_revision)}`,
+    repository.branch || repository.tracked_branch
+      ? `分支：${repository.branch || "—"} → ${repository.tracked_branch || "—"}` : ""
+  ].filter(Boolean).join("\n");
+  return `<div class="repository-notice ${warning?"attention":""}" title="${esc(details)}" aria-label="${esc(`${parts.join("，")}。${details.replaceAll("\n", "，")}`)}">${esc(parts.join(" · "))}</div>`;
 }
 function card(service) {
   const state = service.state || (service.ready ? "ready" : service.running ? "starting" : "stopped");
@@ -83,13 +90,14 @@ function card(service) {
   const startAction = !service.running && !operation ? `<button class="${service.url ? "" : "primary"}" data-action="start">启动</button>` : "";
   const menuActions = [
     `<button data-action="logs">查看日志</button>`,
+    service.repository?.web_url ? `<a class="menu-link" href="${esc(service.repository.web_url)}" target="_blank" rel="noreferrer">远端仓库</a>` : "",
     service.running && !operation ? `<button data-action="restart">重启</button>` : "",
     service.running && !operation ? `<button class="danger-action" data-action="stop">停止</button>` : "",
     service.can_update && !service.running && !operation ? `<button data-action="update">更新</button>` : ""
   ].join("");
   return `<article class="card state-${esc(state)} ${hasIssue(service)?"has-problem":""}" data-id="${esc(service.id)}">
     <div class="top"><div class="card-title"><div class="port-list">${versionTag}${portTags}</div><h3>${esc(service.name)}</h3></div><span class="status ${operation?"updating":esc(state)}"><i class="dot"></i>${operation?"更新中":esc(labels[state] || state)}</span></div>
-    <p class="desc">${esc(service.description || "")}</p>${repositoryNotice(service.repository)}${alerts}${checks}${operationBox}
+    <p class="desc">${esc(service.description || "")}</p>${repositoryNotice(service.repository, service.version)}${alerts}${checks}${operationBox}
     <div class="meta"><span><small>最近变更</small><strong>${service.last_change_at ? dateTime(service.last_change_at) : "—"}</strong></span></div>
     <div class="actions">${openAction}${startAction}<details class="action-menu"><summary aria-label="更多操作">更多</summary><div class="action-menu-panel">${menuActions}</div></details></div>
   </article>`;
@@ -100,7 +108,12 @@ function cardRenderSignature(services) {
     id: service.id, name: service.name, version: service.version, description: service.description, ports: service.ports,
     url: service.url, can_update: service.can_update, running: service.running, ready: service.ready,
     state: service.state, problem: service.problem, port_conflicts: service.port_conflicts, last_change_at: service.last_change_at,
-    repository: service.repository ? {state:service.repository.state, dirty:service.repository.dirty, url:service.repository.url} : null,
+    repository: service.repository ? {
+      state:service.repository.state, dirty:service.repository.dirty,
+      local_revision:service.repository.local_revision, remote_revision:service.repository.remote_revision,
+      branch:service.repository.branch, tracked_branch:service.repository.tracked_branch,
+      web_url:service.repository.web_url
+    } : null,
     operation: service.operation ? {action:service.operation.action} : null,
     checks: Object.values(service.health?.checks || {}).map(check => ({name: check.name, status: check.status}))
   })));

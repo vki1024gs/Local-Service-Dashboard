@@ -52,6 +52,31 @@ def validate_repository_url(value: str) -> str:
     return value
 
 
+def validate_repository_web_url(value: str) -> str:
+    value = validate_repository_url(value)
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("repository web URL must use http or https")
+    return value.rstrip("/")
+
+
+def repository_web_url(repository: dict[str, str]) -> str | None:
+    explicit = repository.get("webUrl")
+    if explicit:
+        return validate_repository_web_url(explicit)
+    clone_url = repository.get("url", "")
+    try:
+        parsed = urllib.parse.urlsplit(clone_url)
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    path = parsed.path[:-4] if parsed.path.endswith(".git") else parsed.path
+    if not path or path == "/":
+        return None
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path.rstrip("/"), "", ""))
+
+
 def validate_repository_names(branch: str, remote: str) -> tuple[str, str]:
     if (not branch or branch.startswith("-") or any(character.isspace() for character in branch)
             or any(token in branch for token in ("..", "@{", "\\", "~", "^", ":", "?", "*", "["))
@@ -107,10 +132,20 @@ def load_registration(project_ref: str, workspace: WorkspacePaths | None = None)
     if repository is not None:
         if not isinstance(repository, dict):
             raise ValueError(f"Registration {project_ref} repository must be an object")
+        unknown_repository_fields = set(repository) - {"url", "branch", "remote", "webUrl"}
+        if unknown_repository_fields:
+            raise ValueError(
+                f"Registration {project_ref} repository has unknown fields: "
+                + ", ".join(sorted(unknown_repository_fields))
+            )
         if not all(isinstance(repository.get(key), str) and repository[key] for key in ("url", "branch", "remote")):
             raise ValueError(f"Registration {project_ref} repository metadata is incomplete")
         validate_repository_url(repository["url"])
         validate_repository_names(repository["branch"], repository["remote"])
+        if repository.get("webUrl") is not None:
+            if not isinstance(repository["webUrl"], str):
+                raise ValueError(f"Registration {project_ref} repository webUrl must be a string")
+            validate_repository_web_url(repository["webUrl"])
     return data
 
 
@@ -157,6 +192,7 @@ def register_project(
     *,
     visible_name: str | None = None,
     repository_url: str | None = None,
+    repository_web: str | None = None,
     branch: str | None = None,
     remote: str = "origin",
     detect_git: bool = True,
@@ -169,7 +205,8 @@ def register_project(
         with operation_lock(workspace.root):
             return register_project(
                 project_ref, target, visible_name=visible_name, repository_url=repository_url,
-                branch=branch, remote=remote, detect_git=detect_git, replace=replace,
+                repository_web=repository_web, branch=branch, remote=remote,
+                detect_git=detect_git, replace=replace,
                 workspace=workspace, _locked=True,
             )
     path = registration_path(project_ref, workspace)
@@ -202,6 +239,14 @@ def register_project(
         repository = detect_repository(target)
         if repository:
             validate_repository_names(repository["branch"], repository["remote"])
+    if repository_web:
+        if repository is None:
+            raise ValueError("--web-url requires Git repository metadata")
+        repository["webUrl"] = validate_repository_web_url(repository_web)
+    elif repository:
+        inferred_web = repository_web_url(repository)
+        if inferred_web:
+            repository["webUrl"] = inferred_web
     record: dict[str, Any] = {
         "schemaVersion": REGISTRATION_SCHEMA_VERSION,
         "documentType": REGISTRATION_DOCUMENT_TYPE,
@@ -239,6 +284,7 @@ def main() -> int:
     parser.add_argument("target", type=Path)
     parser.add_argument("--visible-name")
     parser.add_argument("--git-url")
+    parser.add_argument("--web-url")
     parser.add_argument("--branch")
     parser.add_argument("--remote", default="origin")
     parser.add_argument("--no-git", action="store_true")
@@ -252,6 +298,7 @@ def main() -> int:
             args.target,
             visible_name=args.visible_name,
             repository_url=args.git_url,
+            repository_web=args.web_url,
             branch=args.branch,
             remote=args.remote,
             detect_git=not args.no_git,

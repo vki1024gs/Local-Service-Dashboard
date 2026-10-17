@@ -43,7 +43,7 @@ This repository is the application and the canonical Agent kit. Real instance da
 
 ## Repository status
 
-Optional Git metadata is stored in the private registration record. Status checks are bounded, cached, background, and non-mutating. They may use `ls-remote` and local read-only inspection, but never fetch, pull, checkout, merge, update refs, or modify the worktree. Show `update_available` only when ancestry is already provable; otherwise show that the remote is different. Repository availability never changes service health and never enables lifecycle Update.
+Optional Git metadata is stored in the private registration record. A browser destination must use validated `repository.webUrl`; infer it only from an HTTP(S) clone URL, otherwise require `--web-url`. Status checks are bounded, cached, background, and non-mutating. They may use `ls-remote` and local read-only inspection, but never fetch, pull, checkout, merge, update refs, or modify the worktree. Show `update_available` only when ancestry is already provable; otherwise show that the remote is different. A drift notice must expose both local and remote revisions and the compared branches, while the application version remains a separate `display.version_from` value. Repository availability never changes service health and never enables lifecycle Update.
 
 ## Migration and bundles
 
