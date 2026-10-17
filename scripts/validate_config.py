@@ -7,11 +7,19 @@ import re
 import sys
 from pathlib import Path
 
+sys.dont_write_bytecode = True
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "dashboard"))
+
+from project_registry import resolve_project_ref  # noqa: E402
+from workspace import workspace_paths  # noqa: E402
+
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 CATEGORIES = {"static-web", "frontend", "backend", "service"}
 TOP_FIELDS = {"schema_version", "launcher", "services"}
 LAUNCHER_FIELDS = {"title", "host", "port", "monitor_interval_seconds", "stop_services_on_exit",
-                   "exit_when_no_clients_seconds"}
+                   "exit_when_no_clients_seconds", "repository_check_interval_seconds"}
 SERVICE_FIELDS = {"id", "category", "project_ref", "display", "lifecycle", "health", "url", "env",
                   "open_on_start", "validation", "observability", "ports"}
 DISPLAY_FIELDS = {"name", "description", "name_from"}
@@ -23,7 +31,8 @@ VALIDATION_FIELDS = {"startup_timeout_seconds", "stability_seconds", "shutdown_t
                      "poll_interval_seconds", "action_timeout_seconds", "monitor_detection_timeout_seconds"}
 OBSERVABILITY_FIELDS = {"mode", "url", "host", "env_file", "port_key", "scheme", "path",
                         "fallback_port", "diagnostics_path", "logs_path", "events_path", "open_path"}
-PORT_FIELDS = {"name", "mode", "port", "env_file", "port_key", "fallback_port"}
+PORT_FIELDS = {"name", "mode", "port", "env_file", "port_key", "fallback_port", "editable"}
+URL_FIELDS = {"mode", "env_file", "port_key", "fallback_port", "scheme", "host", "path"}
 
 
 def valid_port(value: object) -> bool:
@@ -54,21 +63,9 @@ def validate_command(command: object, label: str, errors: list[str]) -> None:
 
 
 def registration_target(config_path: Path, project_ref: str) -> Path | None:
-    registry = config_path.resolve().parent / "registry" / "projects"
-    link = registry / project_ref
-    if link.is_dir() or link.is_symlink():
-        try:
-            return link.resolve(strict=True)
-        except OSError:
-            return None
-    pointer = registry / f"{project_ref}.path.json"
-    if not pointer.is_file():
-        return None
     try:
-        raw = json.loads(pointer.read_text(encoding="utf-8"))["target"]
-        target = Path(raw).expanduser()
-        return (pointer.parent / target).resolve() if not target.is_absolute() else target.resolve()
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return resolve_project_ref(project_ref, workspace_paths(config_path.resolve().parent))
+    except (OSError, ValueError):
         return None
 
 
@@ -99,6 +96,9 @@ def validate(path: Path) -> list[str]:
     idle_exit = launcher.get("exit_when_no_clients_seconds", 0)
     if not isinstance(idle_exit, (int, float)) or idle_exit < 0:
         errors.append("launcher.exit_when_no_clients_seconds must be zero or greater")
+    repository_interval = launcher.get("repository_check_interval_seconds", 900)
+    if not isinstance(repository_interval, (int, float)) or repository_interval < 30:
+        errors.append("launcher.repository_check_interval_seconds must be at least 30")
 
     services = data.get("services")
     if not isinstance(services, list):
@@ -214,9 +214,27 @@ def validate(path: Path) -> list[str]:
                     errors.append(f"{port_label}.port_key is required for env mode")
                 if "fallback_port" in binding and not valid_port(binding["fallback_port"]):
                     errors.append(f"{port_label}.fallback_port must be an integer from 1 to 65535")
+                if "editable" in binding and binding["editable"] is not False:
+                    errors.append(
+                        f"{port_label}.editable currently supports only false; "
+                        "in-dashboard port mutation is intentionally disabled"
+                    )
                 env_file = binding.get("env_file")
                 if isinstance(env_file, str) and (Path(env_file).is_absolute() or ".." in Path(env_file).parts):
                     errors.append(f"{port_label}.env_file must stay inside the project")
+
+        url = service.get("url")
+        if url is not None and not isinstance(url, (str, dict)):
+            errors.append(f"{label}.url must be a string or env binding")
+        elif isinstance(url, dict):
+            unknown_fields(url, URL_FIELDS, f"{label}.url", errors)
+            if url.get("mode") != "env" or not isinstance(url.get("port_key"), str):
+                errors.append(f"{label}.url requires env mode and port_key")
+            if "fallback_port" in url and not valid_port(url["fallback_port"]):
+                errors.append(f"{label}.url.fallback_port must be an integer from 1 to 65535")
+            env_file = url.get("env_file")
+            if isinstance(env_file, str) and (Path(env_file).is_absolute() or ".." in Path(env_file).parts):
+                errors.append(f"{label}.url.env_file must stay inside the project")
 
         observability = service.get("observability")
         if observability is not None:
@@ -243,8 +261,10 @@ def validate(path: Path) -> list[str]:
         else:
             unknown_fields(validation, VALIDATION_FIELDS, f"{label}.validation", errors)
             for field, value in validation.items():
-                if not isinstance(value, (int, float)):
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
                     errors.append(f"{label}.validation.{field} must be numeric")
+                elif field != "stability_seconds" and value <= 0:
+                    errors.append(f"{label}.validation.{field} must be greater than zero")
             if isinstance(validation.get("stability_seconds"), (int, float)) and validation["stability_seconds"] < 5:
                 errors.append(f"{label}.validation.stability_seconds must be at least 5")
 

@@ -1,38 +1,20 @@
-# Skill and project privacy isolation
+# Privacy isolation
 
-Treat the installed Skill as read-only generic tooling. Treat each materialized launcher as private project state.
-
-## Allowed locations
+The repository contains generic tracked framework code. The resolved local workspace contains all private instance state.
 
 | Data | Allowed location |
 |---|---|
-| Generic runtime, schema, UI, synthetic example | Skill package |
-| Real project path or registration | Explicit launcher instance only |
-| Real service name, port, lifecycle command, env binding | Instance `dashboard/launcher.config.json` only |
-| Project-specific adapter | Instance `dashboard/adapters/<service-id>/` only |
-| Optional platform GUI launcher | Instance `dashboard/entrypoints/` only |
-| Runtime logs and state history | Instance `dashboard/logs/` and browser memory only |
-| Lifecycle validation report | Instance `dashboard/validation-report.json` only |
-| Readable project shortcut | Instance `projects/` only |
+| Runtime, schema, UI, Skill, recipes, synthetic examples | Tracked repository |
+| Project path and Git registration | Workspace `registry/` |
+| Real service descriptor and environment binding | Workspace `launcher.config.json` |
+| Instance adapter or GUI entrypoint | Workspace `adapters/` or `entrypoints/` |
+| Project shortcut | Workspace `projects/` |
+| Logs, reports, cache, backups, imports | Corresponding workspace directories |
 
-## Prohibited writes
+Initialize with `python3 scripts/init_dashboard.py`. The default `.local-dashboard/` is ignored; `LOCAL_SERVICE_DASHBOARD_DATA_DIR` may move it. Initialization copies no runtime and creates no sibling project.
 
-Never add real project data to Skill frontmatter, instructions, references, UI metadata, template defaults, scripts, tests, examples, fixtures, or bundled assets. Never replace the generic template registration with a real symlink or absolute pointer. Never use a real project log as a Skill test fixture.
+Never write real names, paths, ports, commands, URLs, credentials, logs, screenshots, registrations, or reports into `SKILL.md`, `references/`, `recipes/`, `examples/`, tests, defaults, or runtime source. Never use a real project as a public fixture. Put secrets in a process environment or project-local ignored storage, not Dashboard configuration.
 
-## Required materialization
+Portable export is allowlisted, never a workspace archive. It excludes targets, environment values, logs, reports, cache, observed revisions, and framework code. Adapters are included only when explicitly selected and rejected when they appear to contain a secret or machine path.
 
-Create an instance only with:
-
-```bash
-python scripts/create_launcher.py <explicit-destination>
-```
-
-The script copies only generic framework files and creates `dashboard/.launcher-instance` in the destination. The generic template has no marker. Its registrar and normal runtime execution refuse to operate there, preventing accidental project registration inside the Skill. Keep internal state inside `dashboard`, project links inside `projects`, and the installed Skill pointer at `launcher-skill`; expose only English-named folders, launch files, and concise Markdown documentation at the instance root.
-
-## Generic improvement rule
-
-If a real project exposes a missing capability, describe the capability generically, build a synthetic fixture under a temporary directory, change the framework against that fixture, and run the privacy audit. Do not preserve the original path, project name, command, port, configuration contents, log excerpt, or repository identity.
-
-## Audit
-
-Run `python scripts/audit_privacy.py`. It rejects symlinks, absolute project pointers, user-home paths, runtime reports, and log files inside the Skill package.
+If a private failure reveals a generic deficiency, reproduce it with a synthetic temporary fixture before changing the framework. Run `python3 scripts/audit_privacy.py`; it rejects tracked workspace data, user paths, secrets, symlinks, logs, reports, binary artifacts, non-English paths, and generated residue.

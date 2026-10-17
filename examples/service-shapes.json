@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "documentType": "synthetic-service-shape-catalog",
+  "examples": {
+    "frontend": {
+      "id": "example-frontend",
+      "category": "frontend",
+      "project_ref": "example-frontend",
+      "display": {"name": "Example frontend"},
+      "lifecycle": {"start": ["npm", "run", "dev"]},
+      "health": {"mode": "env", "env_file": ".env", "port_key": "WEB_PORT", "scheme": "http"},
+      "url": "auto"
+    },
+    "backend": {
+      "id": "example-api",
+      "category": "backend",
+      "project_ref": "example-api",
+      "display": {"name": "Example API"},
+      "lifecycle": {"start": ["npm", "run", "start"]},
+      "health": {"mode": "http", "url": "http://127.0.0.1:48080/health"},
+      "ports": [{"name": "API", "mode": "fixed", "port": 48080}]
+    },
+    "detached": {
+      "id": "example-detached",
+      "category": "service",
+      "project_ref": "example-detached",
+      "display": {"name": "Example detached service"},
+      "lifecycle": {"start": ["python", "scripts/start.py"], "stop": ["python", "scripts/stop.py"]},
+      "health": {"mode": "command", "command": ["python", "scripts/ready.py"]}
+    },
+    "multiplePorts": {
+      "id": "example-multiple-ports",
+      "category": "service",
+      "project_ref": "example-multiple-ports",
+      "display": {"name": "Example multi-port service"},
+      "lifecycle": {"start": ["python", "scripts/start.py"]},
+      "health": {"mode": "env", "env_file": ".env", "port_key": "WEB_PORT", "path": "/health"},
+      "url": {"mode": "env", "env_file": ".env", "port_key": "WEB_PORT", "path": "/"},
+      "ports": [
+        {"name": "WebUI", "mode": "env", "env_file": ".env", "port_key": "WEB_PORT", "fallback_port": 47110},
+        {"name": "API", "mode": "env", "env_file": ".env", "port_key": "API_PORT", "fallback_port": 47111}
+      ],
+      "observability": {"mode": "env", "env_file": ".env", "port_key": "API_PORT", "diagnostics_path": "/status", "logs_path": "/logs"}
+    }
+  },
+  "registrationNote": "Repository URL and branch are optional private registration metadata, never service descriptor fields."
+}

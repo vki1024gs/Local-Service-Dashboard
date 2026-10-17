@@ -23,10 +23,16 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+sys.dont_write_bytecode = True
+
+from project_registry import load_registration, resolve_project_ref as resolve_registered_project
+from repository_status import RepositoryStatusMonitor
+from workspace import validate_marker, workspace_paths
+
 ROOT = Path(__file__).resolve().parent
-CONFIG_PATH = ROOT / "launcher.config.json"
-LOG_DIR = ROOT / "logs"
-INSTANCE_MARKER = ROOT / ".launcher-instance"
+DEFAULT_WORKSPACE = workspace_paths()
+CONFIG_PATH = DEFAULT_WORKSPACE.config
+LOG_DIR = DEFAULT_WORKSPACE.logs
 REF_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 LOCAL_URL_RE = re.compile(r"https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?[^\s\"']*")
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -128,25 +134,7 @@ def select_command(value: Any) -> str | list[str] | None:
 
 
 def resolve_project_ref(config_path: Path, project_ref: str) -> Path:
-    if not REF_RE.fullmatch(project_ref):
-        raise ValueError(f"Invalid project_ref: {project_ref}")
-    registry = config_path.resolve().parent / "registry" / "projects"
-    link = registry / project_ref
-    if link.is_symlink() or link.is_dir():
-        target = link.resolve()
-    else:
-        pointer = registry / f"{project_ref}.path.json"
-        if not pointer.is_file():
-            raise FileNotFoundError(f"Unregistered project_ref: {project_ref}")
-        raw_target = json.loads(pointer.read_text(encoding="utf-8")).get("target")
-        if not isinstance(raw_target, str) or not raw_target:
-            raise ValueError(f"Invalid project pointer: {pointer}")
-        target = Path(raw_target).expanduser()
-        if not target.is_absolute():
-            target = (pointer.parent / target).resolve()
-    if not target.is_dir():
-        raise FileNotFoundError(f"Project target does not exist: {target}")
-    return target
+    return resolve_registered_project(project_ref, workspace_paths(config_path.resolve().parent))
 
 
 def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
@@ -161,6 +149,7 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
     normalized = []
     for raw in data["services"]:
         project_root = resolve_project_ref(path, raw["project_ref"])
+        registration = load_registration(raw["project_ref"], workspace_paths(path.resolve().parent))
         variables = {"launcher_dir": str(path.resolve().parent), "project_root": str(project_root)}
         raw = expand(raw, variables)
         display = raw.get("display", {})
@@ -173,13 +162,19 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
             "env": raw.get("env", {}), "open_on_start": raw.get("open_on_start", False),
             "validation": raw.get("validation", {}), "observability": raw.get("observability"),
             "ports": raw.get("ports", []),
+            "repository": registration.get("repository"),
         }
-        service["env"] = {**service["env"], "PROJECT_ROOT": str(project_root)}
+        service["env"] = {
+            **service["env"],
+            "PROJECT_ROOT": str(project_root),
+            "DASHBOARD_WORKSPACE_ROOT": str(path.resolve().parent),
+        }
         for action in ("start", "stop", "update"):
             if action in lifecycle:
                 service[action] = lifecycle[action]
         normalized.append(service)
     data["services"] = normalized
+    data["_workspace_root"] = str(path.resolve().parent)
     return data
 
 
@@ -202,6 +197,9 @@ class ServiceManager:
         )
         self.http_health_cache: dict[str, tuple[float, bool]] = {}
         self.health_locks = {service_id: threading.Lock() for service_id in self.services}
+        self.repository_monitor = RepositoryStatusMonitor(
+            config.get("launcher", {}).get("repository_check_interval_seconds", 900)
+        )
         LOG_DIR.mkdir(exist_ok=True)
 
     def _service(self, service_id: str) -> dict[str, Any]:
@@ -209,18 +207,23 @@ class ServiceManager:
             raise KeyError(f"Unknown service: {service_id}")
         return self.services[service_id]
 
-    def _begin_operation(self, service_id: str, action: str, message: str) -> None:
+    def _begin_operation(self, service_id: str, action: str, message: str) -> str:
         with self.lock:
             current = self.operations.get(service_id)
             if current:
                 raise ActionError("action_in_progress", action,
                                   f"{current['action']} is already in progress")
+            operation_id = secrets.token_urlsafe(12)
+            log_path = LOG_DIR / f"{service_id}.log"
             self.operations[service_id] = {
+                "id": operation_id,
                 "action": action,
                 "progress": None,
                 "message": message,
                 "started_at": time.time(),
+                "log_offset": log_path.stat().st_size if log_path.exists() else 0,
             }
+            return operation_id
 
     def _set_operation_progress(self, service_id: str, progress: int | None,
                                 message: str | None = None) -> None:
@@ -242,7 +245,12 @@ class ServiceManager:
     def operation(self, service_id: str) -> dict[str, Any] | None:
         with self.lock:
             value = self.operations.get(service_id)
-            return dict(value) if value else None
+            result = dict(value) if value else None
+        if result is None:
+            return None
+        result.pop("log_offset", None)
+        result["elapsed_seconds"] = max(0.0, time.time() - result["started_at"])
+        return result
 
     def has_active_operations(self) -> bool:
         with self.lock:
@@ -274,7 +282,11 @@ class ServiceManager:
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             kwargs["start_new_session"] = True
-        process = subprocess.Popen(command, **kwargs)
+        try:
+            process = subprocess.Popen(command, **kwargs)
+        except BaseException:
+            log_file.close()
+            raise
         self.logs[service["id"]] = log_file
         return process
 
@@ -599,6 +611,9 @@ class ServiceManager:
         configured = service.get("url")
         if isinstance(configured, str) and configured != "auto":
             return configured
+        if isinstance(configured, dict):
+            endpoint = self._endpoint_from_config(service, configured)
+            return endpoint[1] if endpoint and endpoint[0] == "http" else None
         base = self._observability_base_url(service)
         if base:
             open_path = service.get("observability", {}).get("open_path")
@@ -795,6 +810,9 @@ class ServiceManager:
                         "with": [names[other_id] for other_id in other_ids],
                     })
             item["can_update"] = select_command(service.get("update")) is not None
+            item["repository"] = self.repository_monitor.status(
+                service["project_ref"], Path(service["cwd"]), service.get("repository")
+            )
             item["operation"] = self.operation(service["id"])
             item.update(status)
             if service.get("_last_observability_health"):
@@ -958,6 +976,7 @@ def make_handler(manager: ServiceManager, token: str, title: str, monitor_interv
 
 
 def main() -> int:
+    global LOG_DIR
     parser = argparse.ArgumentParser(description="Local Service Launcher")
     parser.add_argument("--config", type=Path, default=CONFIG_PATH)
     parser.add_argument("--no-browser", action="store_true")
@@ -971,9 +990,12 @@ def main() -> int:
     if args.check_config:
         print(f"OK: {args.config} ({len(config['services'])} services, {current_os()})")
         return 0
-    if not INSTANCE_MARKER.is_file():
-        print("Refusing to run the reusable template; create a launcher instance first")
+    try:
+        validate_marker(args.config.resolve().parent / "workspace.json")
+    except ValueError as exc:
+        print(f"Workspace error: {exc}")
         return 2
+    LOG_DIR = args.config.resolve().parent / "logs"
     launcher = config.get("launcher", {})
     host = launcher.get("host", "127.0.0.1")
     if host not in ("127.0.0.1", "localhost"):

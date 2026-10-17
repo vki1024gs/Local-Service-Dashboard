@@ -1,58 +1,34 @@
 # Architecture
 
-## Purpose
-
-This repository contains a reusable framework and a generator. It is not a deployed dashboard and must not contain machine-specific service data.
-
-## Source layout
+Local Service Dashboard uses one tracked application checkout and one private local workspace. Privacy is a storage boundary, not a second generated project.
 
 ```text
-local-service-dashboard/
-├── AGENTS.md
-├── ARCHITECTURE.md
-├── README.md
-├── SKILL.md
-├── LICENSE
-├── agents/
-├── assets/
-│   └── launcher-template/
-├── references/
-└── scripts/
+repository (tracked)                 local workspace (ignored)
+├─ dashboard/ runtime + WebUI        ├─ workspace.json
+├─ scripts/ tools and verification   ├─ launcher.config.json
+├─ defaults/ public empty defaults   ├─ registry/projects/*.json
+├─ references/ contracts             ├─ projects/ links or pointers
+├─ recipes/ reusable patterns        ├─ adapters/ and entrypoints/
+├─ examples/ synthetic fixtures      ├─ logs/ reports/ cache/
+└─ SKILL.md Agent workflow           └─ backups/ imports/
+                 │
+                 └── explicit registration ──> external service projects
 ```
 
-- `assets/launcher-template/` is the generic source copied into a new private instance.
-- `scripts/create_launcher.py` is the only supported materialization path.
-- `scripts/validate_config.py` validates the fixed schema and registered references.
-- `scripts/verify_lifecycle.py` proves lifecycle and monitoring behavior.
-- `scripts/audit_privacy.py` rejects private runtime artifacts and absolute user paths.
-- `references/` defines configuration, monitoring, verification, and privacy contracts.
+The workspace defaults to `.local-dashboard/`. `LOCAL_SERVICE_DASHBOARD_DATA_DIR` may select an absolute path or a path relative to the repository. `dashboard/workspace.py` is the single resolver used by initialization, registration, validation, runtime, migration, and bundles.
 
-## Deployment boundary
+`workspace.json` and project registration records are versioned documents. A missing, malformed, foreign, or incompatible marker fails before any service command runs. Dashboard-owned JSON writes use same-filesystem temporary files and atomic replacement. Bundle import and legacy migration create backups before replacement.
 
-The generator copies the template into a user-chosen directory outside this repository. Only that generated instance may contain:
+`dashboard/project_registry.py` owns path resolution and optional repository metadata. Service descriptors contain a `project_ref`, never a real path. Visible links are convenience only; the versioned record is authoritative.
 
-- project registrations and pointers;
-- lifecycle commands and real ports;
-- adapters;
-- runtime logs and validation reports;
-- the `.launcher-instance` marker.
+Runtime health and Git repository status are independent:
 
-The repository itself must remain synthetic and portable. A generated instance links back to this repository for maintenance instructions, but its runtime files are independent copies.
+- health decides whether the service can be used;
+- URL decides what Open launches;
+- `ports` reports declared endpoint roles and collisions;
+- lifecycle update executes only an explicitly configured project workflow;
+- repository status performs bounded, cached, non-mutating comparison and may report current, newer remote, ahead, diverged, different, or unavailable.
 
-## Runtime model
+The browser UI is an authenticated localhost control surface, not a general process supervisor. It does not scan ports, infer projects, auto-restart services, or kill unknown listeners.
 
-The generated Python process serves a localhost WebUI and JSON API, supervises only processes started through the dashboard, and probes only explicitly configured health endpoints. Readiness is authoritative; a launcher-owned PID is optional.
-
-`health` answers whether a service is ready. It may use an application endpoint, dynamic environment binding, reliable discovered URL, bare TCP only when socket acceptance is sufficient, or a project-owned command for deeper readiness. `url` supplies the primary Open destination. `ports` is a declared endpoint inventory used to expose potential configuration conflicts. These concepts remain separate.
-
-The monitor reports unexpected stops and later recovery. It does not automatically restart services or scan the machine for unknown projects, ports, or processes.
-
-Finite update commands may emit `LAUNCHER_PROGRESS` JSON lines. The runtime parses them into the live service snapshot, updates card progress in place, and keeps a service-level operation guard until post-update startup and stability checks finish. Idle and explicit dashboard shutdown are blocked during that interval. Project-owned update scripts provide cross-process locking and atomic installation so a launcher restart cannot create a second updater.
-
-## Trust model
-
-`launcher.config.json` is executable local configuration because lifecycle commands run on the host. The server binds to `127.0.0.1`, state-changing API requests require a per-session token, and secrets belong in the environment or a service-owned ignored file.
-
-## Change rule
-
-A framework capability change is complete only when runtime, validator, configuration reference, synthetic regression coverage, and deployment documentation agree. Private instance fixes must first be generalized and reproduced with synthetic fixtures before entering this repository.
+Portable export is allowlisted: sanitized configuration, registration identities, optional repository coordinates, and explicitly selected adapters. It excludes targets, environment values, logs, reports, cache, observed revisions, and framework code. Import is preview-first, requires explicit project path mappings, validates in a temporary workspace, backs up current state, and rolls back on failure.

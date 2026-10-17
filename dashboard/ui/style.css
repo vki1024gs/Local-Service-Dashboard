@@ -237,6 +237,18 @@ h3 { margin: 5px 0 0; font-size: 18px; letter-spacing: -0.02em; line-height: 1.2
 .card.has-problem { border-color: #e6a19a; box-shadow: 0 14px 40px rgba(150, 48, 39, 0.12); }
 .card.has-problem::before { background: var(--red); opacity: 0.88; }
 .card:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
+.repository-notice {
+  display: inline-flex;
+  width: fit-content;
+  margin: 0 0 10px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #edf3ef;
+  color: #476254;
+  font-size: 12px;
+  font-weight: 700;
+}
+.repository-notice.attention { background: #fff2d9; color: #805b16; }
 
 .top {
   display: flex;

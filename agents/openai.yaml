@@ -1,4 +1,4 @@
 interface:
   display_name: "Local Service Launcher"
-  short_description: "用隐私隔离框架实时监控并验证 localhost 服务"
-  default_prompt: "Use $local-service-launcher framework v1 for <paths>; materialize it at <destination>; keep all project data in that instance only; then verify lifecycle, monitoring, drift, and privacy."
+  short_description: "用仓库内 Dashboard 和隔离工作区管理 localhost 服务"
+  default_prompt: "Use $local-service-launcher in this clone. Initialize its ignored local workspace in place, register only the project paths I explicitly supply, keep real configuration and adapters out of Git, then verify lifecycle, monitoring, repository status, and privacy. Never create a second Dashboard project."

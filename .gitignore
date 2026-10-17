@@ -5,10 +5,6 @@ __pycache__/
 *.log
 .venv/
 venv/
-dashboard/.launcher-instance
-dashboard/logs/
-dashboard/validation-report.json
-launcher-skill
-launcher-skill.path.txt
-projects/*
-!projects/.gitkeep
+/.local-dashboard/
+/.env.local
+/dashboard-app/

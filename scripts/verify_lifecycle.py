@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify start, sustained health, stop, and restart for generated launchers."""
+"""Verify start, sustained health, stop, and restart for this Dashboard clone."""
 
 from __future__ import annotations
 
@@ -28,12 +28,12 @@ def load_runtime(launcher_dir: Path):
     path = launcher_dir / "dashboard" / "launcher.py"
     if not path.is_file():
         raise FileNotFoundError(f"launcher.py not found in {launcher_dir}")
-    spec = importlib.util.spec_from_file_location("generated_local_service_launcher", path)
+    sys.path.insert(0, str(path.parent))
+    spec = importlib.util.spec_from_file_location("local_service_dashboard_runtime", path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Cannot import {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    module.LOG_DIR = launcher_dir / "dashboard" / "logs"
     return module
 
 
@@ -161,21 +161,25 @@ def verify_service(manager: Any, service_id: str, keep_running: bool = False) ->
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify a generated local service launcher")
+    parser = argparse.ArgumentParser(description="Verify this Local Service Dashboard clone")
     parser.add_argument("launcher_dir", type=Path)
+    parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--service", action="append", dest="services", help="Service ID; repeat as needed")
     parser.add_argument("--keep-running", action="store_true", help="Leave passing services running")
     parser.add_argument("--report", type=Path,
-                        help="Report path (default: launcher_dir/dashboard/validation-report.json)")
+                        help="Report path (default: local workspace reports/validation-report.json)")
     args = parser.parse_args()
     launcher_dir = args.launcher_dir.expanduser().resolve()
-    report_path = args.report or launcher_dir / "dashboard" / "validation-report.json"
+    runtime = load_runtime(launcher_dir)
+    workspace = runtime.workspace_paths(args.data_dir)
+    report_path = args.report or workspace.reports / "validation-report.json"
     report: dict[str, Any] = {"started_at": now(), "launcher_dir": str(launcher_dir), "services": []}
     exit_code = 0
     manager = None
     try:
-        runtime = load_runtime(launcher_dir)
-        config = runtime.load_config(launcher_dir / "dashboard" / "launcher.config.json")
+        runtime.validate_marker(workspace.marker)
+        runtime.LOG_DIR = workspace.logs
+        config = runtime.load_config(workspace.config)
         manager = runtime.ServiceManager(config)
         report["os"] = runtime.current_os()
         service_ids = args.services or list(manager.services)
@@ -201,6 +205,7 @@ def main() -> int:
     finally:
         report["finished_at"] = now()
         report["passed"] = exit_code == 0
+        report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         if manager is not None and not args.keep_running:
             manager.stop_all()

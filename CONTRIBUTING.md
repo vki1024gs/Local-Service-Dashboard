@@ -10,4 +10,4 @@ Before opening a pull request:
 4. Run the repository checks listed in `README.md`.
 5. Describe which operating systems were actually tested.
 
-Do not submit generated dashboard instances, real registrations, logs, screenshots containing local data, validation reports, credentials, or personal filesystem paths.
+Do not submit local workspaces, real registrations, logs, screenshots containing local data, validation reports, credentials, or personal filesystem paths.

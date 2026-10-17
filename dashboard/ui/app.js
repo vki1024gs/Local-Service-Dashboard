@@ -44,6 +44,20 @@ const labels = {
 const problemLabels = {"health-check-failed":"健康检查失败", "stopped-unexpectedly":"意外停止", "startup-timeout":"启动超时"};
 const actionLabels = {start:"启动", stop:"停止", restart:"重启", update:"更新"};
 function hasIssue(service) { return Boolean(service.problem || service.port_conflicts?.length); }
+function repositoryNotice(repository) {
+  if (!repository) return "";
+  const labels = {
+    checking:"正在检查版本", update_available:"有更新", ahead:"本地领先",
+    diverged:"版本已分叉", unknown_relation:"远端版本不同", unavailable:"版本检查失败"
+  };
+  const parts = [];
+  if (labels[repository.state]) parts.push(labels[repository.state]);
+  if (repository.dirty) parts.push("有未提交修改");
+  if (!parts.length) return "";
+  const warning = ["update_available", "diverged", "unknown_relation", "unavailable"].includes(repository.state);
+  const title = repository.url ? ` title="${esc(repository.url)}"` : "";
+  return `<div class="repository-notice ${warning?"attention":""}"${title}>${esc(parts.join(" · "))}</div>`;
+}
 function card(service) {
   const state = service.state || (service.ready ? "ready" : service.running ? "starting" : "stopped");
   const operation = service.operation;
@@ -73,7 +87,7 @@ function card(service) {
   ].join("");
   return `<article class="card state-${esc(state)} ${hasIssue(service)?"has-problem":""}" data-id="${esc(service.id)}">
     <div class="top"><div class="card-title"><div class="port-list">${portTags}</div><h3>${esc(service.name)}</h3></div><span class="status ${operation?"updating":esc(state)}"><i class="dot"></i>${operation?"更新中":esc(labels[state] || state)}</span></div>
-    <p class="desc">${esc(service.description || "")}</p>${alerts}${checks}${operationBox}
+    <p class="desc">${esc(service.description || "")}</p>${repositoryNotice(service.repository)}${alerts}${checks}${operationBox}
     <div class="meta"><span><small>最近变更</small><strong>${service.last_change_at ? dateTime(service.last_change_at) : "—"}</strong></span></div>
     <div class="actions">${openAction}${startAction}<details class="action-menu"><summary aria-label="更多操作">更多</summary><div class="action-menu-panel">${menuActions}</div></details></div>
   </article>`;
@@ -84,6 +98,7 @@ function cardRenderSignature(services) {
     id: service.id, name: service.name, description: service.description, ports: service.ports,
     url: service.url, can_update: service.can_update, running: service.running, ready: service.ready,
     state: service.state, problem: service.problem, port_conflicts: service.port_conflicts, last_change_at: service.last_change_at,
+    repository: service.repository ? {state:service.repository.state, dirty:service.repository.dirty, url:service.repository.url} : null,
     operation: service.operation ? {action:service.operation.action} : null,
     checks: Object.values(service.health?.checks || {}).map(check => ({name: check.name, status: check.status}))
   })));

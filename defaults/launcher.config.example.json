@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "launcher": {
+    "title": "Local Service Dashboard",
+    "host": "127.0.0.1",
+    "port": 17321,
+    "monitor_interval_seconds": 1,
+    "stop_services_on_exit": false
+  },
+  "services": []
+}

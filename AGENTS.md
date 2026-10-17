@@ -1,51 +1,41 @@
-# Agent Guide
+# Agent contract
 
-Read `SKILL.md`, `ARCHITECTURE.md`, and the relevant file under `references/` before changing code or configuring an instance.
+This checkout is the Dashboard application. Do not generate, copy, or maintain a second Dashboard project beside it. Read `SKILL.md` before configuring a real service.
 
-## Repository boundary
+## Ownership boundary
 
-- This repository is reusable framework source, not a dashboard instance.
-- Never add real project names, paths, repository URLs, ports, commands, environment values, logs, screenshots, registrations, or validation reports.
-- Never run the template directly or add `assets/launcher-template/dashboard/.launcher-instance`.
-- Use only synthetic temporary fixtures for tests.
-- Keep all file and directory names in English. Prefer lowercase kebab-case except conventional uppercase documentation names.
+- Tracked source: `dashboard/`, `scripts/`, `defaults/`, `references/`, `recipes/`, `examples/`, `SKILL.md`, and project documentation.
+- Private instance state: the resolved local workspace, `.local-dashboard/` by default or `LOCAL_SERVICE_DASHBOARD_DATA_DIR` when explicitly set.
+- External projects: only paths explicitly supplied by the user and registered through `dashboard/project_registry.py`.
+- Never scan parent, sibling, home, common project, port, or process locations to discover services.
 
-## New deployment
+Real registrations, service descriptors, adapters, entrypoints, environment values, logs, reports, caches, observed revisions, and machine paths belong only in the ignored workspace. Tracked examples must remain synthetic. Do not customize a tracked recipe in place.
 
-1. Obtain the exact instance destination and every project path from the user.
-2. Do not scan parent folders, common project locations, ports, or processes.
-3. Run `python scripts/create_launcher.py <new-destination>`.
-4. Register only supplied projects with the generated `dashboard/register_project.py`.
-5. Configure lifecycle commands, readiness, navigation URL, and documented ports from project-owned sources.
-6. Add `lifecycle.update` only for a known safe project update workflow.
-7. Validate config, prove the complete lifecycle, and verify live stop/recovery monitoring.
+## Cold start
 
-## Framework changes
+1. Run `python3 scripts/init_dashboard.py --dry-run`, then `python3 scripts/init_dashboard.py`.
+2. The initializer must create only the private workspace. It must not copy runtime source.
+3. Register each explicit path with `python3 dashboard/project_registry.py <project-ref> <path> [--visible-name name]`.
+4. Edit the reported workspace `launcher.config.json`, using only registered `project_ref` values and the schema in `references/configuration.md`.
+5. Put unavoidable instance glue in workspace `adapters/<service-id>/` and reference the supplied `PROJECT_ROOT`; never embed a project path.
 
-- Preserve the fixed schema and localhost-only, token-protected runtime.
-- Keep readiness, Open URL, and declared port inventory separate.
-- Prefer application-level HTTP or a project-owned command health check over bare TCP when a process can listen before its internal runtime is usable.
-- Do not add project discovery, arbitrary command editing, port reservation, or automatic restart.
-- Update runtime, validator, schema/reference docs, synthetic tests, and README together when behavior changes.
-- Keep Python runtime dependencies standard-library-only unless a maintainer explicitly changes that policy.
-- Require update scripts to implement `LAUNCHER_PROGRESS`, a cross-process single-flight lock, unique temporary files, validation, and atomic replacement.
-- Keep the dashboard alive during finite operations and reject conflicting service actions or shutdown until completion.
-- Render lifecycle failures in the application UI with cleaned logs; do not use native browser alerts.
+## Lifecycle and repository rules
 
-## Required checks
+- Health, Open URL, declared ports, lifecycle update, and Git upstream status are separate contracts.
+- Git status checks are informational and non-mutating. They must never fetch, pull, checkout, merge, or enable an Update button by themselves.
+- Use a project-owned safe updater only when one exists. Updates need progress records, single-flight locking, validation, and atomic replacement.
+- Never stop or kill an unidentified process. Restart is verified stop then start.
+- Bind the Dashboard to loopback and preserve the per-session API token.
 
-```bash
-python scripts/smoke_test.py
-python scripts/audit_privacy.py
-python scripts/validate_config.py assets/launcher-template/dashboard/launcher.config.json
-python -m py_compile assets/launcher-template/dashboard/launcher.py
-python -m py_compile assets/launcher-template/dashboard/register_project.py
+## Required verification
+
+Run before committing or pushing:
+
+```text
+python3 scripts/smoke_test.py
+python3 scripts/audit_privacy.py
+python3 -m py_compile dashboard/*.py scripts/*.py
+node --check dashboard/ui/app.js
 ```
 
-If Node.js is available, also run:
-
-```bash
-node --check assets/launcher-template/dashboard/ui/app.js
-```
-
-Report macOS and Windows verification separately. Never claim an unavailable operating system was tested.
+Also run lifecycle verification in an approved test window for every real service and available target OS. Preserve the old instance after migration until the user explicitly approves archival. Git must remain clean after normal workspace use; framework edits must remain visible.

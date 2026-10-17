@@ -24,9 +24,14 @@ jobs:
       - name: Audit release privacy
         run: python scripts/audit_privacy.py
       - name: Validate bundled example
-        run: python scripts/validate_config.py assets/launcher-template/dashboard/launcher.config.json
+        run: python dashboard/launcher.py --config defaults/launcher.config.example.json --check-config
       - name: Compile Python entrypoints
         run: >-
           python -m py_compile
-          assets/launcher-template/dashboard/launcher.py
-          assets/launcher-template/dashboard/register_project.py
+          dashboard/launcher.py
+          dashboard/project_registry.py
+          dashboard/repository_status.py
+          dashboard/workspace.py
+          scripts/config_bundle.py
+          scripts/init_dashboard.py
+          scripts/migrate_instance.py

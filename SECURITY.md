@@ -15,6 +15,6 @@ Use GitHub private vulnerability reporting when it is enabled for the repository
 - Treat `launcher.config.json` as executable local configuration.
 - Keep secrets in the environment or a service-owned ignored file.
 - Review every lifecycle and update command before enabling it.
-- Do not commit a generated instance.
+- Do not commit the local workspace or exported private machine state.
 
 The per-session API token protects state-changing requests from ordinary browser-origin access; it is not a substitute for host security or safe service commands.

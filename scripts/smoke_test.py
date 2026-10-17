@@ -11,35 +11,230 @@ from unittest import mock
 sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE = ROOT / "assets" / "launcher-template"
-LAUNCHER = TEMPLATE / "dashboard" / "launcher.py"
-CREATE_LAUNCHER = ROOT / "scripts" / "create_launcher.py"
-REGISTER_PROJECT = TEMPLATE / "dashboard" / "register_project.py"
+LAUNCHER = ROOT / "dashboard" / "launcher.py"
+INITIALIZE = ROOT / "scripts" / "init_dashboard.py"
+REGISTER_PROJECT = ROOT / "dashboard" / "register_project.py"
+BUNDLE = ROOT / "scripts" / "config_bundle.py"
 assert LAUNCHER.is_file()
-assert not any(any(ord(character) > 127 for character in path.name) for path in TEMPLATE.rglob("*"))
+assert not any(any(ord(character) > 127 for character in path.name) for path in ROOT.rglob("*")
+               if ".git" not in path.parts and ".local-dashboard" not in path.parts)
+sys.path.insert(0, str(ROOT / "dashboard"))
 
-register_spec = importlib.util.spec_from_file_location("register_project", REGISTER_PROJECT)
-register_project = importlib.util.module_from_spec(register_spec)
-assert register_spec.loader
-register_spec.loader.exec_module(register_project)
-assert register_project.validate_visible_name("synthetic-project") == "synthetic-project"
-try:
-    register_project.validate_visible_name("Synthetic Project")
-    raise AssertionError("non-kebab visible names must be rejected")
-except ValueError:
-    pass
+import project_registry
+import repository_status
+import workspace as workspace_module
+
+
+def register_fixture(root: Path, project_ref: str, target: Path) -> None:
+    registry = root / "registry" / "projects"
+    registry.mkdir(parents=True, exist_ok=True)
+    (registry / f"{project_ref}.json").write_text(json.dumps({
+        "schemaVersion": 1,
+        "documentType": "registered-project",
+        "projectRef": project_ref,
+        "visibleName": project_ref.replace("_", "-"),
+        "target": str(target.resolve()),
+    }), encoding="utf-8")
 
 with tempfile.TemporaryDirectory() as temp:
-    destination = Path(temp) / "synthetic-launcher"
-    subprocess.run([sys.executable, str(CREATE_LAUNCHER), str(destination)], check=True,
+    destination = Path(temp) / "workspace"
+    subprocess.run([sys.executable, str(INITIALIZE), "--data-dir", str(destination)], check=True,
                    capture_output=True, text=True)
-    assert (destination / "dashboard" / ".launcher-instance").is_file()
+    assert (destination / "workspace.json").is_file()
     assert (destination / "projects").is_dir()
-    assert (destination / "launcher-skill").exists() or (destination / "launcher-skill.path.txt").is_file()
-    assert (destination / "launch-dashboard.command").is_file()
-    assert (destination / "launch-dashboard.bat").is_file()
-    assert (destination / "README.md").is_file()
-print("OK: English-only materialized framework structure")
+    assert (destination / "launcher.config.json").is_file()
+    assert not (destination / "dashboard").exists()
+    repeated = subprocess.run([sys.executable, str(INITIALIZE), "--data-dir", str(destination)],
+                              check=True, capture_output=True, text=True)
+    assert "ALREADY_INITIALIZED" in repeated.stdout
+    incompatible = Path(temp) / "incompatible"
+    incompatible.mkdir()
+    (incompatible / "workspace.json").write_text(json.dumps({
+        "schemaVersion": 999,
+        "documentType": "local-service-dashboard-workspace",
+        "applicationId": "local-service-dashboard",
+    }), encoding="utf-8")
+    refused = subprocess.run([sys.executable, str(INITIALIZE), "--data-dir", str(incompatible)],
+                             capture_output=True, text=True)
+    assert refused.returncode != 0 and "incompatible" in refused.stderr.lower()
+print("OK: in-place Dashboard initialization creates private state only")
+
+before_status = subprocess.run(["git", "status", "--short"], cwd=ROOT, check=True,
+                               capture_output=True, text=True).stdout
+subprocess.run([sys.executable, str(INITIALIZE)], cwd=ROOT, check=True,
+               capture_output=True, text=True)
+after_status = subprocess.run(["git", "status", "--short"], cwd=ROOT, check=True,
+                              capture_output=True, text=True).stdout
+assert before_status == after_status
+subprocess.run(["git", "check-ignore", "-q", ".local-dashboard/workspace.json"],
+               cwd=ROOT, check=True)
+print("OK: default local workspace use leaves Git status unchanged")
+
+with tempfile.TemporaryDirectory() as temp:
+    root = Path(temp)
+    workspace_root = root / "workspace"
+    subprocess.run(
+        [sys.executable, str(INITIALIZE), "--data-dir", str(workspace_root)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    workspace = workspace_module.require_workspace(workspace_root)
+    remote = root / "remote.git"
+    project = root / "project"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    subprocess.run(["git", "init", "-b", "main", str(project)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(project), "config", "user.name", "Synthetic Test"], check=True)
+    subprocess.run(["git", "-C", str(project), "config", "user.email", "test@example.invalid"], check=True)
+    (project / "version.txt").write_text("one\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(project), "add", "version.txt"], check=True)
+    subprocess.run(["git", "-C", str(project), "commit", "-m", "initial"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(project), "remote", "add", "origin", str(remote)], check=True)
+    subprocess.run(["git", "-C", str(project), "push", "-u", "origin", "main"], check=True, capture_output=True)
+    record, _ = project_registry.register_project(
+        "synthetic-project", project, workspace=workspace
+    )
+    assert record["repository"]["url"] == str(remote)
+    assert project_registry.resolve_project_ref("synthetic-project", workspace) == project.resolve()
+    try:
+        project_registry.register_project(
+            "shortcut-collision", project, visible_name="synthetic-project",
+            detect_git=False, workspace=workspace,
+        )
+        raise AssertionError("shortcut collision must fail")
+    except ValueError:
+        assert not (workspace.registry / "shortcut-collision.json").exists()
+    try:
+        project_registry.register_project(
+            "credential-url", project, repository_url="https://user:secret@example.invalid/repo.git",
+            branch="main", workspace=workspace,
+        )
+        raise AssertionError("credential-bearing repository URL must fail")
+    except ValueError:
+        assert not (workspace.registry / "credential-url.json").exists()
+    current = repository_status.inspect_repository(project, record["repository"])
+    assert current["state"] == "current", current
+    second = root / "second"
+    subprocess.run(["git", "clone", "-b", "main", str(remote), str(second)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(second), "config", "user.name", "Synthetic Test"], check=True)
+    subprocess.run(["git", "-C", str(second), "config", "user.email", "test@example.invalid"], check=True)
+    (second / "version.txt").write_text("two\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(second), "commit", "-am", "new version"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(second), "push", "origin", "main"], check=True, capture_output=True)
+    different = repository_status.inspect_repository(project, record["repository"])
+    assert different["state"] == "unknown_relation", different
+    subprocess.run(["git", "-C", str(project), "fetch", "origin", "main"], check=True, capture_output=True)
+    ref_before = subprocess.run(["git", "-C", str(project), "show-ref"], check=True,
+                                capture_output=True, text=True).stdout
+    status_before = subprocess.run(["git", "-C", str(project), "status", "--porcelain"], check=True,
+                                   capture_output=True, text=True).stdout
+    update = repository_status.inspect_repository(project, record["repository"])
+    assert update["state"] == "update_available", update
+    assert subprocess.run(["git", "-C", str(project), "show-ref"], check=True,
+                          capture_output=True, text=True).stdout == ref_before
+    assert subprocess.run(["git", "-C", str(project), "status", "--porcelain"], check=True,
+                          capture_output=True, text=True).stdout == status_before
+    subprocess.run(["git", "-C", str(project), "merge", "--ff-only", "origin/main"],
+                   check=True, capture_output=True)
+    (project / "local.txt").write_text("local\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(project), "add", "local.txt"], check=True)
+    subprocess.run(["git", "-C", str(project), "commit", "-m", "local change"],
+                   check=True, capture_output=True)
+    ahead = repository_status.inspect_repository(project, record["repository"])
+    assert ahead["state"] == "ahead", ahead
+    (second / "remote.txt").write_text("remote\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(second), "add", "remote.txt"], check=True)
+    subprocess.run(["git", "-C", str(second), "commit", "-m", "remote change"],
+                   check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(second), "push", "origin", "main"],
+                   check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(project), "fetch", "origin", "main"],
+                   check=True, capture_output=True)
+    diverged = repository_status.inspect_repository(project, record["repository"])
+    assert diverged["state"] == "diverged", diverged
+print("OK: private registration and non-mutating Git version status")
+
+monitor = repository_status.RepositoryStatusMonitor(interval_seconds=30)
+release_check = threading.Event()
+check_finished = threading.Event()
+calls = []
+
+def synthetic_repository_check(target, repository):
+    calls.append((target, repository))
+    release_check.wait(timeout=2)
+    check_finished.set()
+    return {"state": "current", "checked_at": 1e20}
+
+with mock.patch.object(repository_status, "inspect_repository", side_effect=synthetic_repository_check):
+    metadata = {"url": "https://example.invalid/repository.git", "branch": "main", "remote": "origin"}
+    assert monitor.status("single-flight", ROOT, metadata)["state"] == "checking"
+    assert monitor.status("single-flight", ROOT, metadata)["state"] == "checking"
+    release_check.set()
+    assert check_finished.wait(timeout=2)
+    for _ in range(100):
+        observed = monitor.status("single-flight", ROOT, metadata)
+        if observed["state"] == "current":
+            break
+        threading.Event().wait(0.01)
+    assert observed["state"] == "current" and len(calls) == 1
+print("OK: repository status monitor is cached and single-flight")
+
+with tempfile.TemporaryDirectory() as temp:
+    root = Path(temp)
+    project = root / "portable-project"
+    project.mkdir()
+    source = root / "source-workspace"
+    target = root / "target-workspace"
+    for workspace_root in (source, target):
+        subprocess.run([sys.executable, str(INITIALIZE), "--data-dir", str(workspace_root)],
+                       check=True, capture_output=True, text=True)
+    source_workspace = workspace_module.require_workspace(source)
+    project_registry.register_project("portable-project", project, detect_git=False,
+                                      workspace=source_workspace)
+    source_workspace.config.write_text(json.dumps({
+        "schema_version": 1,
+        "launcher": {"host": "127.0.0.1"},
+        "services": [{
+            "id": "portable-project", "category": "service",
+            "project_ref": "portable-project", "display": {"name": "Portable fixture"},
+            "lifecycle": {"start": [sys.executable, "-c", "pass"]},
+            "health": {"mode": "tcp", "port": 54329},
+            "env": {"SYNTHETIC_TOKEN": "must-not-export"},
+        }],
+    }), encoding="utf-8")
+    adapter = source_workspace.adapters / "portable" / "start.py"
+    adapter.parent.mkdir(parents=True)
+    adapter.write_text("import os\nassert os.environ['PROJECT_ROOT']\n", encoding="utf-8")
+    bundle = root / "portable-bundle.json"
+    subprocess.run([
+        sys.executable, str(BUNDLE), "--data-dir", str(source), "export", str(bundle),
+        "--adapter", "portable/start.py",
+    ], check=True, capture_output=True, text=True)
+    exported = bundle.read_text(encoding="utf-8")
+    assert str(project) not in exported and "must-not-export" not in exported
+    mapping = f"portable-project={project}"
+    preview = subprocess.run([
+        sys.executable, str(BUNDLE), "--data-dir", str(target), "import", str(bundle),
+        "--map", mapping,
+    ], check=True, capture_output=True, text=True)
+    assert "PREVIEW complete" in preview.stdout
+    subprocess.run([
+        sys.executable, str(BUNDLE), "--data-dir", str(target), "import", str(bundle),
+        "--map", mapping, "--apply",
+    ], check=True, capture_output=True, text=True)
+    imported = json.loads((target / "launcher.config.json").read_text(encoding="utf-8"))
+    assert "env" not in imported["services"][0]
+    assert (target / "adapters" / "portable" / "start.py").is_file()
+print("OK: sanitized configuration bundle preview and round-trip")
+
+for guide in (ROOT / "README.md", ROOT / "AGENTS.md", ROOT / "SKILL.md"):
+    text = guide.read_text(encoding="utf-8")
+    assert "create_launcher.py <" not in text
+    assert "assets/launcher-template" not in text
+assert "never create a second dashboard" in (
+    ROOT / "agents" / "openai.yaml"
+).read_text(encoding="utf-8").lower()
+print("OK: repository-resident Agent guidance uses one in-place Dashboard")
 spec = importlib.util.spec_from_file_location("launcher", LAUNCHER)
 launcher = importlib.util.module_from_spec(spec)
 assert spec.loader
@@ -55,9 +250,7 @@ with tempfile.TemporaryDirectory() as temp:
     root = Path(temp)
     project = root / "project"
     project.mkdir()
-    registry = root / "registry" / "projects"
-    registry.mkdir(parents=True)
-    (registry / "probe.path.json").write_text(json.dumps({"target": str(project)}), encoding="utf-8")
+    register_fixture(root, "probe", project)
     launcher.LOG_DIR = root / "logs"
     path = root / "launcher.config.json"
     path.write_text(json.dumps({
@@ -72,8 +265,8 @@ with tempfile.TemporaryDirectory() as temp:
     }), encoding="utf-8")
     config = launcher.load_config(path)
     manager = launcher.ServiceManager(config)
-    assert manager.services["probe"]["cwd"] == str(project)
-    assert manager.services["probe"]["env"]["PROJECT_ROOT"] == str(project)
+    assert manager.services["probe"]["cwd"] == str(project.resolve())
+    assert manager.services["probe"]["env"]["PROJECT_ROOT"] == str(project.resolve())
     assert manager.start("probe")["running"]
     assert manager.stop("probe")["running"] is False
 print("OK: launcher process lifecycle")
@@ -84,9 +277,7 @@ with tempfile.TemporaryDirectory() as temp:
     project.mkdir()
     (project / "package.json").write_text('{"name":"alpha-ui"}', encoding="utf-8")
     (project / ".env").write_text("PORT=3100\n", encoding="utf-8")
-    registry = root / "registry" / "projects"
-    registry.mkdir(parents=True)
-    (registry / "web.path.json").write_text(json.dumps({"target": str(project)}), encoding="utf-8")
+    register_fixture(root, "web", project)
     path = root / "launcher.config.json"
     path.write_text(json.dumps({"schema_version": 1, "launcher": {}, "services": [{
         "id": "web", "category": "frontend", "project_ref": "web",
@@ -111,9 +302,7 @@ with tempfile.TemporaryDirectory() as temp:
     project = root / "project"
     project.mkdir()
     (project / ".env").write_text("# PORT intentionally omitted\n", encoding="utf-8")
-    registry = root / "registry" / "projects"
-    registry.mkdir(parents=True)
-    (registry / "web.path.json").write_text(json.dumps({"target": str(project)}), encoding="utf-8")
+    register_fixture(root, "web", project)
     path = root / "launcher.config.json"
     path.write_text(json.dumps({"schema_version": 1, "launcher": {}, "services": [{
         "id": "web", "category": "backend", "project_ref": "web",
@@ -135,9 +324,7 @@ with tempfile.TemporaryDirectory() as temp:
     root = Path(temp)
     project = root / "project"
     project.mkdir()
-    registry = root / "registry" / "projects"
-    registry.mkdir(parents=True)
-    (registry / "command.path.json").write_text(json.dumps({"target": str(project)}), encoding="utf-8")
+    register_fixture(root, "command", project)
     path = root / "launcher.config.json"
     probe = "import pathlib,sys;sys.exit(0 if pathlib.Path('ready').exists() else 1)"
     path.write_text(json.dumps({"schema_version": 1, "launcher": {}, "services": [{
@@ -170,10 +357,8 @@ with tempfile.TemporaryDirectory() as temp:
     second.mkdir()
     (first / ".env").write_text("WEB_PORT=4100\nAPI_PORT=5100\n", encoding="utf-8")
     (second / ".env").write_text("PORT=5100\n", encoding="utf-8")
-    registry = root / "registry" / "projects"
-    registry.mkdir(parents=True)
-    (registry / "first.path.json").write_text(json.dumps({"target": str(first)}), encoding="utf-8")
-    (registry / "second.path.json").write_text(json.dumps({"target": str(second)}), encoding="utf-8")
+    register_fixture(root, "first", first)
+    register_fixture(root, "second", second)
     path = root / "launcher.config.json"
     path.write_text(json.dumps({"schema_version": 1, "launcher": {}, "services": [
         {"id": "first", "category": "frontend", "project_ref": "first",
@@ -211,9 +396,7 @@ with tempfile.TemporaryDirectory() as temp:
     root = Path(temp)
     project = root / "project"
     project.mkdir()
-    registry = root / "registry" / "projects"
-    registry.mkdir(parents=True)
-    (registry / "api.path.json").write_text(json.dumps({"target": str(project)}), encoding="utf-8")
+    register_fixture(root, "api", project)
     path = root / "launcher.config.json"
     path.write_text(json.dumps({"schema_version": 1, "launcher": {}, "services": [{
         "id": "api", "category": "backend", "project_ref": "api",
@@ -246,9 +429,7 @@ with tempfile.TemporaryDirectory() as temp:
     root = Path(temp)
     project = root / "project"
     project.mkdir()
-    registry = root / "registry" / "projects"
-    registry.mkdir(parents=True)
-    (registry / "progress.path.json").write_text(json.dumps({"target": str(project)}), encoding="utf-8")
+    register_fixture(root, "progress", project)
     path = root / "launcher.config.json"
     path.write_text(json.dumps({"schema_version": 1, "launcher": {}, "services": [{
         "id": "progress", "category": "service", "project_ref": "progress",

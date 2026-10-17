@@ -40,7 +40,9 @@
         "host": {"enum": ["127.0.0.1", "localhost"]},
         "port": {"type": "integer", "minimum": 1, "maximum": 65535},
         "monitor_interval_seconds": {"type": "number", "minimum": 0.25, "maximum": 5},
-        "stop_services_on_exit": {"type": "boolean"}
+        "stop_services_on_exit": {"type": "boolean"},
+        "exit_when_no_clients_seconds": {"type": "number", "minimum": 0},
+        "repository_check_interval_seconds": {"type": "number", "minimum": 30}
       }
     },
     "services": {
@@ -82,7 +84,8 @@
               "timeout_seconds": {"type": "number"}, "env_file": {"type": "string"},
               "port_key": {"type": "string"}, "scheme": {"enum": ["http", "https", "tcp"]},
               "path": {"type": "string"}, "fallback_url": {"type": "string"},
-              "fallback_port": {"type": "integer"}
+              "fallback_port": {"type": "integer", "minimum": 1, "maximum": 65535},
+              "http_probe_interval_seconds": {"type": "number", "minimum": 0}
             },
             "allOf": [
               {"if": {"properties": {"mode": {"const": "http"}}}, "then": {"required": ["url"]}},
@@ -91,10 +94,65 @@
               {"if": {"properties": {"mode": {"const": "command"}}}, "then": {"required": ["command"]}}
             ]
           },
-          "url": {"type": "string"},
+          "url": {
+            "oneOf": [
+              {"type": "string"},
+              {
+                "type": "object", "additionalProperties": false,
+                "required": ["mode", "port_key"],
+                "properties": {
+                  "mode": {"const": "env"},
+                  "env_file": {"type": "string"},
+                  "port_key": {"type": "string"},
+                  "fallback_port": {"type": "integer", "minimum": 1, "maximum": 65535},
+                  "scheme": {"enum": ["http", "https"]},
+                  "host": {"type": "string"},
+                  "path": {"type": "string"}
+                }
+              }
+            ]
+          },
           "env": {"type": "object", "additionalProperties": {"type": ["string", "number", "boolean"]}},
           "open_on_start": {"type": "boolean"},
-          "validation": {"$ref": "#/$defs/validation"}
+          "validation": {"$ref": "#/$defs/validation"},
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["name", "mode"],
+              "properties": {
+                "name": {"type": "string", "minLength": 1},
+                "mode": {"enum": ["fixed", "env"]},
+                "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+                "env_file": {"type": "string"},
+                "port_key": {"type": "string"},
+                "fallback_port": {"type": "integer", "minimum": 1, "maximum": 65535},
+                "editable": {"const": false}
+              },
+              "allOf": [
+                {"if": {"properties": {"mode": {"const": "fixed"}}}, "then": {"required": ["port"]}},
+                {"if": {"properties": {"mode": {"const": "env"}}}, "then": {"required": ["port_key"]}}
+              ]
+            }
+          },
+          "observability": {
+            "type": "object", "additionalProperties": false,
+            "required": ["mode"],
+            "properties": {
+              "mode": {"enum": ["http", "env"]},
+              "url": {"type": "string"},
+              "host": {"type": "string"},
+              "env_file": {"type": "string"},
+              "port_key": {"type": "string"},
+              "scheme": {"enum": ["http", "https"]},
+              "path": {"type": "string"},
+              "fallback_port": {"type": "integer", "minimum": 1, "maximum": 65535},
+              "diagnostics_path": {"type": "string"},
+              "logs_path": {"type": "string"},
+              "events_path": {"type": "string"},
+              "open_path": {"type": "string"}
+            }
+          }
         }
       }
     }
