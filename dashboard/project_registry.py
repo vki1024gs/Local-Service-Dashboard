@@ -128,6 +128,11 @@ def load_registration(project_ref: str, workspace: WorkspacePaths | None = None)
     target = data.get("target")
     if not isinstance(target, str) or not Path(target).expanduser().is_absolute():
         raise ValueError(f"Registration {project_ref} has an invalid target")
+    source_url = data.get("sourceUrl")
+    if source_url is not None:
+        if not isinstance(source_url, str):
+            raise ValueError(f"Registration {project_ref} sourceUrl must be a string")
+        validate_repository_web_url(source_url)
     repository = data.get("repository")
     if repository is not None:
         if not isinstance(repository, dict):
@@ -193,6 +198,7 @@ def register_project(
     visible_name: str | None = None,
     repository_url: str | None = None,
     repository_web: str | None = None,
+    source_url: str | None = None,
     branch: str | None = None,
     remote: str = "origin",
     detect_git: bool = True,
@@ -206,6 +212,7 @@ def register_project(
             return register_project(
                 project_ref, target, visible_name=visible_name, repository_url=repository_url,
                 repository_web=repository_web, branch=branch, remote=remote,
+                source_url=source_url,
                 detect_git=detect_git, replace=replace,
                 workspace=workspace, _locked=True,
             )
@@ -247,6 +254,8 @@ def register_project(
         inferred_web = repository_web_url(repository)
         if inferred_web:
             repository["webUrl"] = inferred_web
+    if source_url:
+        source_url = validate_repository_web_url(source_url)
     record: dict[str, Any] = {
         "schemaVersion": REGISTRATION_SCHEMA_VERSION,
         "documentType": REGISTRATION_DOCUMENT_TYPE,
@@ -256,6 +265,8 @@ def register_project(
     }
     if repository:
         record["repository"] = repository
+    if source_url:
+        record["sourceUrl"] = source_url
     workspace.projects.mkdir(parents=True, exist_ok=True)
     old_record_bytes = path.read_bytes() if path.exists() else None
     if old_record_bytes is not None:
@@ -285,6 +296,7 @@ def main() -> int:
     parser.add_argument("--visible-name")
     parser.add_argument("--git-url")
     parser.add_argument("--web-url")
+    parser.add_argument("--source-url")
     parser.add_argument("--branch")
     parser.add_argument("--remote", default="origin")
     parser.add_argument("--no-git", action="store_true")
@@ -299,6 +311,7 @@ def main() -> int:
             visible_name=args.visible_name,
             repository_url=args.git_url,
             repository_web=args.web_url,
+            source_url=args.source_url,
             branch=args.branch,
             remote=args.remote,
             detect_git=not args.no_git,

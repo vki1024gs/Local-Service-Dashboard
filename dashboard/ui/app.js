@@ -90,7 +90,7 @@ function card(service) {
   const startAction = !service.running && !operation ? `<button class="${service.url ? "" : "primary"}" data-action="start">启动</button>` : "";
   const menuActions = [
     `<button data-action="logs">查看日志</button>`,
-    service.repository?.web_url ? `<a class="menu-link" href="${esc(service.repository.web_url)}" target="_blank" rel="noreferrer">远端仓库</a>` : "",
+    service.source_url ? `<a class="menu-link" href="${esc(service.source_url)}" target="_blank" rel="noreferrer">远端项目</a>` : "",
     service.running && !operation ? `<button data-action="restart">重启</button>` : "",
     service.running && !operation ? `<button class="danger-action" data-action="stop">停止</button>` : "",
     service.can_update && !service.running && !operation ? `<button data-action="update">更新</button>` : ""
@@ -106,6 +106,7 @@ function card(service) {
 function cardRenderSignature(services) {
   return JSON.stringify(services.map(service => ({
     id: service.id, name: service.name, version: service.version, description: service.description, ports: service.ports,
+    source_url: service.source_url,
     url: service.url, can_update: service.can_update, running: service.running, ready: service.ready,
     state: service.state, problem: service.problem, port_conflicts: service.port_conflicts, last_change_at: service.last_change_at,
     repository: service.repository ? {

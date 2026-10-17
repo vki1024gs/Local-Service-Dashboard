@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / "dashboard"))
 
 import project_registry
 import repository_status
+import validate_config
 import workspace as workspace_module
 
 
@@ -216,7 +217,8 @@ with tempfile.TemporaryDirectory() as temp:
     project_registry.register_project(
         "portable-project", project,
         repository_url="ssh://git@code.example.invalid/team/portable.git",
-        repository_web="https://code.example.invalid/team/portable", branch="main",
+        repository_web="https://code.example.invalid/team/portable",
+        source_url="https://docs.example.invalid/portable", branch="main",
         workspace=source_workspace,
     )
     source_workspace.config.write_text(json.dumps({
@@ -258,6 +260,7 @@ with tempfile.TemporaryDirectory() as temp:
     assert imported_registration["repository"]["webUrl"] == (
         "https://code.example.invalid/team/portable"
     )
+    assert imported_registration["sourceUrl"] == "https://docs.example.invalid/portable"
     assert (target / "adapters" / "portable" / "start.py").is_file()
 print("OK: sanitized configuration bundle preview and round-trip")
 
@@ -346,6 +349,20 @@ with tempfile.TemporaryDirectory() as temp:
         "file": "pyproject.toml", "key_path": "project.version", "prefix": "v"
     }
     assert manager._display_version(service) == "v2.1.0"
+    service["display"]["version_from"] = {
+        "command": [sys.executable, "-c", "print('tool version 3.4.5')"],
+        "regex": r"version\s+([^\s]+)", "prefix": "v",
+        "timeout_seconds": 1, "refresh_seconds": 5,
+    }
+    manager.version_cache.pop("web", None)
+    assert manager._display_version(service) == "v3.4.5"
+    manager.version_cache["web"] = (0, "v3.4.5")
+    service["display"]["version_from"]["command"] = [sys.executable, "-c", "raise SystemExit(1)"]
+    assert manager._display_version(service) == "v3.4.5"
+    command_config = json.loads(path.read_text(encoding="utf-8"))
+    command_config["services"][0]["display"]["version_from"] = service["display"]["version_from"]
+    path.write_text(json.dumps(command_config), encoding="utf-8")
+    assert validate_config.validate(path) == []
 print("OK: project-owned name and port drift")
 
 with tempfile.TemporaryDirectory() as temp:

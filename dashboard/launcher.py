@@ -194,6 +194,7 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
             "validation": raw.get("validation", {}), "observability": raw.get("observability"),
             "ports": raw.get("ports", []),
             "repository": registration.get("repository"),
+            "source_url": registration.get("sourceUrl"),
         }
         service["env"] = {
             **service["env"],
@@ -228,6 +229,8 @@ class ServiceManager:
         )
         self.http_health_cache: dict[str, tuple[float, bool]] = {}
         self.health_locks = {service_id: threading.Lock() for service_id in self.services}
+        self.version_cache: dict[str, tuple[float, str]] = {}
+        self.version_locks = {service_id: threading.Lock() for service_id in self.services}
         self.repository_monitor = RepositoryStatusMonitor(
             config.get("launcher", {}).get("repository_check_interval_seconds", 900)
         )
@@ -563,6 +566,38 @@ class ServiceManager:
         source = service.get("display", {}).get("version_from")
         if not isinstance(source, dict):
             return None
+        command = select_command(source.get("command"))
+        if command is not None:
+            refresh = float(source.get("refresh_seconds", 300))
+            with self.version_locks[service["id"]]:
+                cached = self.version_cache.get(service["id"])
+                if cached and time.monotonic() - cached[0] < refresh:
+                    return cached[1]
+                try:
+                    completed = subprocess.run(
+                        command,
+                        cwd=service["cwd"],
+                        env={**os.environ, **service.get("env", {})},
+                        shell=isinstance(command, str),
+                        capture_output=True,
+                        text=True,
+                        errors="replace",
+                        timeout=float(source.get("timeout_seconds", 2)),
+                        check=False,
+                    )
+                    output = (completed.stdout + "\n" + completed.stderr)[:4096]
+                    match = re.search(source["regex"], output) if completed.returncode == 0 else None
+                    if match:
+                        value = match.group(1).strip()
+                        if value and len(value) <= 64 and not any(
+                            character in value for character in ("\n", "\r", "\0")
+                        ):
+                            resolved = str(source.get("prefix", "")) + value
+                            self.version_cache[service["id"]] = (time.monotonic(), resolved)
+                            return resolved
+                except (OSError, subprocess.TimeoutExpired, ValueError, re.error):
+                    pass
+                return cached[1] if cached else None
         try:
             path = self._project_file(service, source["file"])
             document_format = source.get("format") or path.suffix.lower().removeprefix(".")
@@ -849,7 +884,8 @@ class ServiceManager:
         services = list(self.services.values())
         statuses = list(self.status_pool.map(lambda item: self.status(item["id"]), services))
         names = {service["id"]: self._display_name(service) for service in services}
-        versions = {service["id"]: self._display_version(service) for service in services}
+        version_values = list(self.status_pool.map(self._display_version, services))
+        versions = {service["id"]: value for service, value in zip(services, version_values)}
         ports = {service["id"]: self.service_ports(service) for service in services}
         owners: dict[int, set[str]] = {}
         for service in services:
@@ -877,6 +913,9 @@ class ServiceManager:
             item["can_update"] = select_command(service.get("update")) is not None
             item["repository"] = self.repository_monitor.status(
                 service["project_ref"], Path(service["cwd"]), service.get("repository")
+            )
+            item["source_url"] = service.get("source_url") or (
+                item["repository"].get("web_url") if item["repository"] else None
             )
             item["operation"] = self.operation(service["id"])
             item.update(status)

@@ -34,7 +34,9 @@ Categories are `static-web`, `frontend`, `backend`, and `service`. Commands acce
 - `lifecycle.update` exists only for a known safe update workflow.
 - registration repository metadata supplies informational upstream state and is not part of the descriptor.
 
-Registration repository metadata contains the clone `url`, `branch`, `remote`, and optional HTTP(S) `webUrl`. The registrar infers `webUrl` only from an HTTP(S) clone URL; SSH, filesystem, and other transports need an explicit `--web-url` before the UI offers “远端仓库”. Both URLs reject credentials. The hover detail reports the application version separately from full local/remote Git revisions and the compared branches.
+Registration repository metadata contains the clone `url`, `branch`, `remote`, and optional HTTP(S) `webUrl`. The registrar infers `webUrl` only from an HTTP(S) clone URL; SSH, filesystem, and other transports need an explicit `--web-url` before the UI offers “远端项目”. Both URLs reject credentials. The hover detail reports the application version separately from full local/remote Git revisions and the compared branches.
+
+For a deployed artifact or container whose registered folder is not a Git checkout, registration may instead set top-level `sourceUrl` with `--source-url`. This produces only the “远端项目” link; it does not fabricate local/remote Git state.
 
 ## Version label
 
@@ -47,6 +49,8 @@ Registration repository metadata contains the clone `url`, `branch`, `remote`, a
 - The resolved value must be a non-empty string of at most 64 characters. Missing, invalid, numeric, or oversized values hide the label instead of making the service unhealthy.
 
 Use the application/package version as this source. Do not place a Git commit, remote comparison, or manually copied release value here: registration repository status remains a separate source-control contract.
+
+If no JSON/TOML manifest exists, use `command` instead of `file`, plus a required `regex` whose first capture group is the version. `timeout_seconds` defaults to 2 (allowed 0.1–10) and `refresh_seconds` defaults to 300 (allowed 5–86400). The command runs in the registered project with bounded output; successful values are cached, and a transient later failure retains the last successful value. The command must be a read-only version query, never a lifecycle or update operation.
 
 An env binding may use `env_file`, `port_key`, `fallback_port`, `scheme`, `host`, and `path`. Paths must stay inside the registered project. A port is 1–65535. An explicit environment value wins over a documented fallback. `ports[].editable: false` is accepted as an explicit read-only declaration; this framework deliberately does not mutate a registered project's environment file from the browser.
 

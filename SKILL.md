@@ -36,6 +36,7 @@ This repository is the application and the canonical Agent kit. Real instance da
 - Prefer application-level HTTP or project-owned command readiness. Use TCP only when accepting a socket is the true contract.
 - Use concrete port role labels such as `WebUI`, `API`, or `Bridge`, never vague visible labels such as “backend” or “service”.
 - When a card should show an application version, bind `display.version_from` to a project-owned JSON/TOML version field. Never duplicate the value manually or confuse it with Git upstream status.
+- When no manifest exists, `display.version_from.command` may call a read-only version query with a required capture regex, bounded timeout, and refresh cache. Do not use lifecycle or mutating commands as version probes.
 - Duplicate declared ports are configuration risks. Report every affected service without claiming an unknown OS process owns the port.
 - Add Update only for a known safe project-owned workflow. It must be single-flight, emit `LAUNCHER_PROGRESS`, stage unique temporary output, validate it, and atomically replace the target.
 - Restart is verified stop then start. Never kill an unidentified listener or infer ownership from a PID alone.
@@ -43,7 +44,7 @@ This repository is the application and the canonical Agent kit. Real instance da
 
 ## Repository status
 
-Optional Git metadata is stored in the private registration record. A browser destination must use validated `repository.webUrl`; infer it only from an HTTP(S) clone URL, otherwise require `--web-url`. Status checks are bounded, cached, background, and non-mutating. They may use `ls-remote` and local read-only inspection, but never fetch, pull, checkout, merge, update refs, or modify the worktree. Show `update_available` only when ancestry is already provable; otherwise show that the remote is different. A drift notice must expose both local and remote revisions and the compared branches, while the application version remains a separate `display.version_from` value. Repository availability never changes service health and never enables lifecycle Update.
+Optional Git metadata is stored in the private registration record. A browser destination must use validated `repository.webUrl`; infer it only from an HTTP(S) clone URL, otherwise require `--web-url`. A non-checkout artifact or container may use validated top-level `sourceUrl` solely as its More-menu destination; it must not fabricate Git status. Status checks are bounded, cached, background, and non-mutating. They may use `ls-remote` and local read-only inspection, but never fetch, pull, checkout, merge, update refs, or modify the worktree. Show `update_available` only when ancestry is already provable; otherwise show that the remote is different. A drift notice must expose both local and remote revisions and the compared branches, while the application version remains a separate `display.version_from` value. Repository availability never changes service health and never enables lifecycle Update.
 
 ## Migration and bundles
 
