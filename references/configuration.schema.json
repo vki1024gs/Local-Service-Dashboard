@@ -42,7 +42,10 @@
         "monitor_interval_seconds": {"type": "number", "minimum": 0.25, "maximum": 5},
         "stop_services_on_exit": {"type": "boolean"},
         "exit_when_no_clients_seconds": {"type": "number", "minimum": 0},
-        "repository_check_interval_seconds": {"type": "number", "minimum": 30}
+        "repository_check_interval_seconds": {
+          "type": "number",
+          "anyOf": [{"const": 0}, {"minimum": 30}]
+        }
       }
     },
     "services": {

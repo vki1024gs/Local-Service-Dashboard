@@ -11,6 +11,12 @@ from pathlib import Path
 from typing import Any
 
 
+def _hidden_window_kwargs() -> dict[str, int]:
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
 def _run_git(target: Path, args: list[str], timeout: float = 4) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", "-C", str(target), *args],
@@ -19,6 +25,7 @@ def _run_git(target: Path, args: list[str], timeout: float = 4) -> subprocess.Co
         timeout=timeout,
         check=False,
         env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"},
+        **_hidden_window_kwargs(),
     )
 
 
@@ -54,6 +61,7 @@ def inspect_repository(target: Path, repository: dict[str, str]) -> dict[str, An
                 timeout=5,
                 check=False,
                 env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"},
+                **_hidden_window_kwargs(),
             )
         except subprocess.TimeoutExpired:
             return {
@@ -106,7 +114,8 @@ def inspect_repository(target: Path, repository: dict[str, str]) -> dict[str, An
 
 class RepositoryStatusMonitor:
     def __init__(self, interval_seconds: float = 900):
-        self.interval_seconds = max(30.0, float(interval_seconds))
+        requested_interval = float(interval_seconds)
+        self.interval_seconds = 0.0 if requested_interval == 0 else max(30.0, requested_interval)
         self.results: dict[str, dict[str, Any]] = {}
         self.checking: set[str] = set()
         self.lock = threading.Lock()
@@ -124,7 +133,14 @@ class RepositoryStatusMonitor:
         now = time.time()
         with self.lock:
             current = self.results.get(project_ref)
-            stale = force or current is None or now - float(current.get("checked_at", 0)) >= self.interval_seconds
+            stale = (
+                force
+                or current is None
+                or (
+                    self.interval_seconds > 0
+                    and now - float(current.get("checked_at", 0)) >= self.interval_seconds
+                )
+            )
             if stale and project_ref not in self.checking:
                 self.checking.add(project_ref)
                 threading.Thread(

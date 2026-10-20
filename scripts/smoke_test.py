@@ -15,6 +15,7 @@ LAUNCHER = ROOT / "dashboard" / "launcher.py"
 INITIALIZE = ROOT / "scripts" / "init_dashboard.py"
 REGISTER_PROJECT = ROOT / "dashboard" / "register_project.py"
 BUNDLE = ROOT / "scripts" / "config_bundle.py"
+VALIDATE_CONFIG = ROOT / "scripts" / "validate_config.py"
 assert LAUNCHER.is_file()
 assert not any(any(ord(character) > 127 for character in path.name) for path in ROOT.rglob("*")
                if ".git" not in path.parts and ".local-dashboard" not in path.parts)
@@ -58,6 +59,26 @@ with tempfile.TemporaryDirectory() as temp:
                              capture_output=True, text=True)
     assert refused.returncode != 0 and "incompatible" in refused.stderr.lower()
 print("OK: in-place Dashboard initialization creates private state only")
+
+with tempfile.TemporaryDirectory() as temp:
+    config = Path(temp) / "launcher.config.json"
+    config.write_text(json.dumps({
+        "schema_version": 1,
+        "launcher": {"host": "127.0.0.1", "repository_check_interval_seconds": 0},
+        "services": [],
+    }), encoding="utf-8")
+    validated = subprocess.run(
+        [sys.executable, str(VALIDATE_CONFIG), str(config)], capture_output=True, text=True
+    )
+    assert validated.returncode == 0, validated.stdout + validated.stderr
+    document = json.loads(config.read_text(encoding="utf-8"))
+    document["launcher"]["repository_check_interval_seconds"] = False
+    config.write_text(json.dumps(document), encoding="utf-8")
+    rejected = subprocess.run(
+        [sys.executable, str(VALIDATE_CONFIG), str(config)], capture_output=True, text=True
+    )
+    assert rejected.returncode != 0
+print("OK: zero repository interval is valid for startup-only checks")
 
 before_status = subprocess.run(["git", "status", "--short"], cwd=ROOT, check=True,
                                capture_output=True, text=True).stdout
@@ -178,6 +199,54 @@ with mock.patch.object(repository_status, "inspect_repository", side_effect=synt
         threading.Event().wait(0.01)
     assert observed["state"] == "current" and len(calls) == 1
 print("OK: repository status monitor is cached and single-flight")
+
+startup_only_monitor = repository_status.RepositoryStatusMonitor(interval_seconds=0)
+startup_check_finished = threading.Event()
+startup_calls = []
+
+def synthetic_startup_check(target, repository):
+    startup_calls.append((target, repository))
+    startup_check_finished.set()
+    return {"state": "current", "checked_at": 1}
+
+with mock.patch.object(repository_status, "inspect_repository", side_effect=synthetic_startup_check):
+    metadata = {"url": "https://example.invalid/repository.git", "branch": "main", "remote": "origin"}
+    assert startup_only_monitor.status("startup-only", ROOT, metadata)["state"] == "checking"
+    assert startup_check_finished.wait(timeout=2)
+    for _ in range(100):
+        observed = startup_only_monitor.status("startup-only", ROOT, metadata)
+        if observed["state"] == "current":
+            break
+        threading.Event().wait(0.01)
+    for _ in range(10):
+        startup_only_monitor.status("startup-only", ROOT, metadata)
+        threading.Event().wait(0.01)
+    assert observed["state"] == "current" and len(startup_calls) == 1
+print("OK: zero repository interval checks once at startup only")
+
+if sys.platform == "win32":
+    completed = subprocess.CompletedProcess(["git"], 0, stdout="", stderr="")
+    with mock.patch.object(repository_status.subprocess, "run", return_value=completed) as run_git:
+        repository_status._run_git(ROOT, ["status"])
+    assert run_git.call_args.kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
+
+    revision = "a" * 40
+    results = [
+        subprocess.CompletedProcess(["git"], 0, stdout=f"{revision}\n", stderr=""),
+        subprocess.CompletedProcess(["git"], 0, stdout="main\n", stderr=""),
+        subprocess.CompletedProcess(["git"], 0, stdout="", stderr=""),
+        subprocess.CompletedProcess(["git"], 0, stdout=f"{revision}\trefs/heads/main\n", stderr=""),
+    ]
+    with mock.patch.object(repository_status.subprocess, "run", side_effect=results) as all_git:
+        repository_status.inspect_repository(
+            ROOT, {"url": "https://example.invalid/repository.git", "branch": "main", "remote": "origin"}
+        )
+    assert len(all_git.call_args_list) == 4
+    assert all(
+        call.kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
+        for call in all_git.call_args_list
+    )
+    print("OK: repository Git checks hide their Windows console")
 
 with tempfile.TemporaryDirectory() as temp:
     root = Path(temp)

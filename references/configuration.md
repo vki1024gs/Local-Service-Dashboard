@@ -64,6 +64,6 @@ Percent is monotonic 0–100. Emit 100 only after post-install verification. Use
 
 Validation fields are `startup_timeout_seconds`, `stability_seconds`, `shutdown_timeout_seconds`, `poll_interval_seconds`, `action_timeout_seconds`, and `monitor_detection_timeout_seconds`; stability is at least five seconds and other durations are positive.
 
-Launcher host is loopback. `monitor_interval_seconds` is 0.25–5. `repository_check_interval_seconds` is at least 30. `exit_when_no_clients_seconds=0` disables idle exit; positive values wait after the last event client leaves and suspend exit during operations. Keep `stop_services_on_exit=false` unless the user explicitly requests coupled shutdown.
+Launcher host is loopback. `monitor_interval_seconds` is 0.25–5. Set `repository_check_interval_seconds=0` to check each repository once when the Dashboard starts without periodic refresh; positive values must be at least 30 seconds. `exit_when_no_clients_seconds=0` disables idle exit; positive values wait after the last event client leaves and suspend exit during operations. Keep `stop_services_on_exit=false` unless the user explicitly requests coupled shutdown.
 
 Adapters belong under workspace `adapters/<service-id>/`, consume `PROJECT_ROOT` and `DASHBOARD_WORKSPACE_ROOT`, and must not embed real paths.

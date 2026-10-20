@@ -98,8 +98,12 @@ def validate(path: Path) -> list[str]:
     if not isinstance(idle_exit, (int, float)) or idle_exit < 0:
         errors.append("launcher.exit_when_no_clients_seconds must be zero or greater")
     repository_interval = launcher.get("repository_check_interval_seconds", 900)
-    if not isinstance(repository_interval, (int, float)) or repository_interval < 30:
-        errors.append("launcher.repository_check_interval_seconds must be at least 30")
+    if (
+        not isinstance(repository_interval, (int, float))
+        or isinstance(repository_interval, bool)
+        or (repository_interval != 0 and repository_interval < 30)
+    ):
+        errors.append("launcher.repository_check_interval_seconds must be zero or at least 30")
 
     services = data.get("services")
     if not isinstance(services, list):
