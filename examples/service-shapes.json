@@ -27,7 +27,16 @@
       "id": "example-detached",
       "category": "service",
       "project_ref": "example-detached",
-      "display": {"name": "Example detached service"},
+      "display": {
+        "name": "Example detached service",
+        "version_from": {
+          "command": ["example-service", "--version"],
+          "regex": "version\\s+([^\\s]+)",
+          "prefix": "v",
+          "timeout_seconds": 2,
+          "refresh_seconds": 300
+        }
+      },
       "lifecycle": {"start": ["python", "scripts/start.py"], "stop": ["python", "scripts/stop.py"]},
       "health": {"mode": "command", "command": ["python", "scripts/ready.py"]}
     },

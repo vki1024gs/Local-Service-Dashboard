@@ -23,7 +23,9 @@ Real registrations, service descriptors, adapters, entrypoints, environment valu
 
 - Health, Open URL, declared ports, lifecycle update, and Git upstream status are separate contracts.
 - A visible application version comes from `display.version_from`; do not hard-code it or derive it from a remote comparison.
+- Prefer a manifest version source. A command version source is allowed only for a read-only project-owned executable or deployed artifact query, with a capture regex, timeout, and refresh cache.
 - Git status checks are informational and non-mutating. They must never fetch, pull, checkout, merge, or enable an Update button by themselves.
+- Every clickable remote repository destination must come from the validated registration `repository.webUrl` (or its safe HTTP(S) clone-URL derivation). Expose both local and remote Git revisions when reporting drift.
 - Use a project-owned safe updater only when one exists. Updates need progress records, single-flight locking, validation, and atomic replacement.
 - Never stop or kill an unidentified process. Restart is verified stop then start.
 - Bind the Dashboard to loopback and preserve the per-session API token.

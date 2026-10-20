@@ -21,7 +21,7 @@ Register only a project path you deliberately chose:
 python3 dashboard/project_registry.py example-app /explicit/path/to/example-app --visible-name example-app
 ```
 
-Registration can detect the current Git remote and branch. To use explicit public coordinates, add `--git-url <url> --branch <branch>`. Credentials in repository URLs are rejected. Use `--no-git` for an untracked project.
+Registration can detect the current Git remote and branch. To use explicit coordinates, add `--git-url <clone-url> --branch <branch>` and, when the clone URL is not already HTTP(S), `--web-url <browser-url>`. Use `--source-url <browser-url>` for a deployed artifact or container whose local folder is not a Git checkout. The validated browser destination appears as “远端项目” under More; HTTP(S) Git clone URLs infer it automatically. Credentials in these URLs are rejected. Use `--no-git` for an untracked project.
 
 Copy a synthetic descriptor from `examples/` into the workspace configuration reported by initialization, then adapt it to the registered project. Validate and launch:
 
@@ -63,7 +63,9 @@ Each service uses a registered `project_ref`. It declares separate concerns:
 - registration `repository`: optional informational upstream check.
 - `display.version_from`: optional project-owned JSON/TOML version shown as a small card label.
 
-Repository checks use bounded `git ls-remote` and local read-only commands. They run once on first observation by default; use “检查版本” in a service card's More menu for an explicit refresh. A positive `launcher.repository_check_interval_seconds` value of at least 30 seconds opts into periodic checking. Checks never fetch, pull, merge, checkout, or change refs. An unequal revision is shown as “远端版本不同” unless local ancestry already proves “有更新”, “领先”, or “已分叉”. A repository warning does not make a healthy service unhealthy and never creates an Update action.
+`display.version_from` may instead run a short, read-only version command with a required capture regex. Command results are bounded, cached, and time-limited; the last successful value survives a later transient command failure. Use this for installed binaries and containerized applications that do not publish a local JSON/TOML manifest.
+
+Repository checks use bounded `git ls-remote` and local read-only commands. They run once on first observation by default; use “检查版本” in a service card's More menu for an explicit refresh. A positive `launcher.repository_check_interval_seconds` value of at least 30 seconds opts into periodic checking. Checks never fetch, pull, merge, checkout, or change refs. An unequal revision is shown as “远端版本不同” unless local ancestry already proves “有更新”, “领先”, or “已分叉”. Hovering the notice shows the application version plus the local/remote Git revisions and branches; More links to the validated browser URL. A repository warning does not make a healthy service unhealthy and never creates an Update action.
 
 See [configuration contract](references/configuration.md), [architecture](ARCHITECTURE.md), and [Agent workflow](SKILL.md).
 

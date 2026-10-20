@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from process_utils import hidden_process_kwargs
+from project_registry import repository_web_url
 
 
 def _run_git(target: Path, args: list[str], timeout: float = 4) -> subprocess.CompletedProcess[str]:
@@ -39,16 +40,28 @@ def _relation(target: Path, local_head: str, remote_head: str) -> str:
 
 def inspect_repository(target: Path, repository: dict[str, str]) -> dict[str, Any]:
     checked_at = time.time()
+    static = {
+        "tracked_branch": repository.get("branch"),
+        "url": repository.get("url"),
+        "web_url": repository_web_url(repository),
+        "checked_at": checked_at,
+    }
     try:
         local = _run_git(target, ["rev-parse", "HEAD"])
         branch = _run_git(target, ["branch", "--show-current"])
         dirty = _run_git(target, ["status", "--porcelain", "--untracked-files=normal"])
         if local.returncode or branch.returncode or dirty.returncode:
-            return {"state": "unavailable", "reason": "local_git_unavailable", "checked_at": checked_at}
+            return {"state": "unavailable", "reason": "local_git_unavailable", **static}
         local_head = local.stdout.strip()
         current_branch = branch.stdout.strip()
         if not current_branch:
             current_branch = "detached"
+        base = {
+            "dirty": bool(dirty.stdout.strip()),
+            "branch": current_branch,
+            **static,
+            "local_revision": local_head,
+        }
         try:
             remote = subprocess.run(
                 ["git", "ls-remote", "--heads", repository["url"], repository["branch"]],
@@ -63,23 +76,20 @@ def inspect_repository(target: Path, repository: dict[str, str]) -> dict[str, An
             return {
                 "state": "unavailable",
                 "reason": "remote_timeout",
-                "dirty": bool(dirty.stdout.strip()),
-                "checked_at": checked_at,
+                **base,
             }
         if remote.returncode != 0:
             return {
                 "state": "unavailable",
                 "reason": "remote_unavailable",
-                "dirty": bool(dirty.stdout.strip()),
-                "checked_at": checked_at,
+                **base,
             }
         line = next((item for item in remote.stdout.splitlines() if item.strip()), "")
         if not line:
             return {
                 "state": "unavailable",
                 "reason": "remote_branch_missing",
-                "dirty": bool(dirty.stdout.strip()),
-                "checked_at": checked_at,
+                **base,
             }
         remote_head = line.split()[0]
         if remote_head == local_head:
@@ -96,16 +106,11 @@ def inspect_repository(target: Path, repository: dict[str, str]) -> dict[str, An
             )
         return {
             "state": state,
-            "dirty": bool(dirty.stdout.strip()),
-            "branch": current_branch,
-            "tracked_branch": repository["branch"],
-            "url": repository["url"],
-            "local_revision": local_head[:12],
-            "remote_revision": remote_head[:12],
-            "checked_at": checked_at,
+            **base,
+            "remote_revision": remote_head,
         }
     except (OSError, KeyError, subprocess.TimeoutExpired):
-        return {"state": "unavailable", "reason": "git_check_failed", "checked_at": checked_at}
+        return {"state": "unavailable", "reason": "git_check_failed", **static}
 
 
 class RepositoryStatusMonitor:
@@ -147,7 +152,13 @@ class RepositoryStatusMonitor:
                 ).start()
             refreshing = project_ref in self.checking
             if current is None:
-                return {"state": "checking", "checked_at": None}
+                return {
+                    "state": "checking",
+                    "checked_at": None,
+                    "tracked_branch": repository.get("branch"),
+                    "web_url": repository_web_url(repository),
+                    "refreshing": refreshing,
+                }
             return {**current, "refreshing": refreshing}
 
     def _check(self, project_ref: str, target: Path, repository: dict[str, str]) -> None:

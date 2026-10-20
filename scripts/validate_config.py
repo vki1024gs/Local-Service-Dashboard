@@ -24,7 +24,10 @@ SERVICE_FIELDS = {"id", "category", "project_ref", "display", "lifecycle", "heal
                   "open_on_start", "validation", "observability", "ports"}
 DISPLAY_FIELDS = {"name", "description", "name_from", "version_from"}
 NAME_FROM_FIELDS = {"file", "json_path"}
-VERSION_FROM_FIELDS = {"file", "format", "key_path", "prefix"}
+VERSION_FROM_FIELDS = {
+    "file", "format", "key_path", "command", "regex", "timeout_seconds",
+    "refresh_seconds", "prefix",
+}
 LIFECYCLE_FIELDS = {"start", "stop", "update"}
 HEALTH_FIELDS = {"mode", "url", "host", "port", "timeout_seconds", "env_file", "port_key", "scheme",
                  "path", "fallback_url", "fallback_port", "http_probe_interval_seconds", "command"}
@@ -163,23 +166,54 @@ def validate(path: Path) -> list[str]:
                 unknown_fields(version_from, VERSION_FROM_FIELDS,
                                f"{label}.display.version_from", errors)
                 version_file = version_from.get("file")
-                if not isinstance(version_file, str):
-                    errors.append(f"{label}.display.version_from.file is required")
-                elif (Path(version_file).is_absolute()
-                      or ".." in Path(version_file).parts):
-                    errors.append(f"{label}.display.version_from.file must stay inside the project")
-                elif (version_from.get("format") is None
-                      and Path(version_file).suffix.lower() not in {".json", ".toml"}):
-                    errors.append(
-                        f"{label}.display.version_from.file needs a .json/.toml suffix or explicit format"
-                    )
-                if version_from.get("format") not in {None, "json", "toml"}:
-                    errors.append(f"{label}.display.version_from.format must be json or toml")
-                key_path = version_from.get("key_path", "version")
-                if not isinstance(key_path, str) or not key_path or any(
-                    not part for part in key_path.split(".")
-                ):
-                    errors.append(f"{label}.display.version_from.key_path must be a dotted key path")
+                version_command = version_from.get("command")
+                if (version_file is None) == (version_command is None):
+                    errors.append(f"{label}.display.version_from needs exactly one of file or command")
+                if version_file is not None:
+                    for field in ("regex", "timeout_seconds", "refresh_seconds"):
+                        if field in version_from:
+                            errors.append(
+                                f"{label}.display.version_from.{field} is only valid with command"
+                            )
+                    if not isinstance(version_file, str):
+                        errors.append(f"{label}.display.version_from.file must be a string")
+                    elif (Path(version_file).is_absolute()
+                          or ".." in Path(version_file).parts):
+                        errors.append(f"{label}.display.version_from.file must stay inside the project")
+                    elif (version_from.get("format") is None
+                          and Path(version_file).suffix.lower() not in {".json", ".toml"}):
+                        errors.append(
+                            f"{label}.display.version_from.file needs a .json/.toml suffix or explicit format"
+                        )
+                    if version_from.get("format") not in {None, "json", "toml"}:
+                        errors.append(f"{label}.display.version_from.format must be json or toml")
+                    key_path = version_from.get("key_path", "version")
+                    if not isinstance(key_path, str) or not key_path or any(
+                        not part for part in key_path.split(".")
+                    ):
+                        errors.append(f"{label}.display.version_from.key_path must be a dotted key path")
+                if version_command is not None:
+                    for field in ("format", "key_path"):
+                        if field in version_from:
+                            errors.append(
+                                f"{label}.display.version_from.{field} is only valid with file"
+                            )
+                    validate_command(version_command, f"{label}.display.version_from.command", errors)
+                    pattern = version_from.get("regex")
+                    if not isinstance(pattern, str) or not pattern:
+                        errors.append(f"{label}.display.version_from.regex is required with command")
+                    else:
+                        try:
+                            if re.compile(pattern).groups < 1:
+                                errors.append(f"{label}.display.version_from.regex needs a capture group")
+                        except re.error:
+                            errors.append(f"{label}.display.version_from.regex is invalid")
+                    timeout = version_from.get("timeout_seconds", 2)
+                    if not isinstance(timeout, (int, float)) or not 0.1 <= timeout <= 10:
+                        errors.append(f"{label}.display.version_from.timeout_seconds must be 0.1 to 10")
+                    refresh = version_from.get("refresh_seconds", 300)
+                    if not isinstance(refresh, (int, float)) or not 5 <= refresh <= 86400:
+                        errors.append(f"{label}.display.version_from.refresh_seconds must be 5 to 86400")
                 prefix = version_from.get("prefix", "")
                 if (not isinstance(prefix, str) or len(prefix) > 8
                         or any(character in prefix for character in ("\n", "\r", "\0"))):

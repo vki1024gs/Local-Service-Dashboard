@@ -436,8 +436,10 @@ button:focus-visible,
 .action-menu summary:focus-visible { outline: 3px solid rgba(41, 161, 105, 0.24); outline-offset: 2px; }
 .action-menu[open] summary { border-color: #aeb8b1; background: #f5f8f5; color: var(--ink); }
 .action-menu-panel { position: absolute; right: 0; bottom: calc(100% + 7px); z-index: 20; display: grid; width: 132px; gap: 2px; padding: 5px; border: 1px solid var(--line); border-radius: 11px; background: #fff; box-shadow: 0 14px 36px rgba(28,45,34,.15); }
-.action-menu-panel button { width: 100%; min-height: 32px; justify-content: flex-start; border: 0; border-radius: 7px; padding: 6px 10px; background: transparent; font-size: 12px; }
-.action-menu-panel button:hover:not(:disabled) { transform: none; border: 0; background: #f3f6f3; }
+.action-menu-panel button,
+.action-menu-panel .menu-link { display: inline-flex; width: 100%; min-height: 32px; align-items: center; justify-content: flex-start; border: 0; border-radius: 7px; padding: 6px 10px; background: transparent; color: var(--ink); font-size: 12px; font-weight: 650; text-decoration: none; }
+.action-menu-panel button:hover:not(:disabled),
+.action-menu-panel .menu-link:hover { transform: none; border: 0; background: #f3f6f3; }
 .action-menu-panel .danger-action { color: var(--red); }
 .action-menu-panel .danger-action:hover:not(:disabled) { background: var(--red-soft); }
 

@@ -68,13 +68,32 @@
                 "properties": {"file": {"type": "string"}, "json_path": {"type": "string"}}
               },
               "version_from": {
-                "type": "object", "additionalProperties": false, "required": ["file"],
+                "type": "object", "additionalProperties": false,
                 "properties": {
                   "file": {"type": "string"},
                   "format": {"enum": ["json", "toml"]},
                   "key_path": {"type": "string", "default": "version"},
+                  "command": {"$ref": "#/$defs/command"},
+                  "regex": {"type": "string"},
+                  "timeout_seconds": {"type": "number", "minimum": 0.1, "maximum": 10},
+                  "refresh_seconds": {"type": "number", "minimum": 5, "maximum": 86400},
                   "prefix": {"type": "string", "maxLength": 8}
-                }
+                },
+                "oneOf": [
+                  {
+                    "required": ["file"],
+                    "not": {"anyOf": [
+                      {"required": ["command"]}, {"required": ["regex"]},
+                      {"required": ["timeout_seconds"]}, {"required": ["refresh_seconds"]}
+                    ]}
+                  },
+                  {
+                    "required": ["command", "regex"],
+                    "not": {"anyOf": [
+                      {"required": ["file"]}, {"required": ["format"]}, {"required": ["key_path"]}
+                    ]}
+                  }
+                ]
               }
             },
             "anyOf": [{"required": ["name"]}, {"required": ["name_from"]}]

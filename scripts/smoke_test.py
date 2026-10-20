@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "dashboard"))
 import project_registry
 import process_utils
 import repository_status
+import validate_config
 import workspace as workspace_module
 
 
@@ -151,6 +152,18 @@ with tempfile.TemporaryDirectory() as temp:
         "synthetic-project", project, workspace=workspace
     )
     assert record["repository"]["url"] == str(remote)
+    assert "webUrl" not in record["repository"]
+    assert project_registry.repository_web_url({
+        "url": "https://code.example.invalid/team/repository.git",
+        "branch": "main", "remote": "origin",
+    }) == "https://code.example.invalid/team/repository"
+    public_record, _ = project_registry.register_project(
+        "public-project", project,
+        repository_url="ssh://git@code.example.invalid/team/repository.git",
+        repository_web="https://code.example.invalid/team/repository",
+        branch="main", workspace=workspace,
+    )
+    assert public_record["repository"]["webUrl"] == "https://code.example.invalid/team/repository"
     assert project_registry.resolve_project_ref("synthetic-project", workspace) == project.resolve()
     try:
         project_registry.register_project(
@@ -168,8 +181,20 @@ with tempfile.TemporaryDirectory() as temp:
         raise AssertionError("credential-bearing repository URL must fail")
     except ValueError:
         assert not (workspace.registry / "credential-url.json").exists()
+    try:
+        project_registry.register_project(
+            "credential-web-url", project,
+            repository_url="ssh://git@code.example.invalid/team/repository.git",
+            repository_web="https://user:secret@code.example.invalid/team/repository",
+            branch="main", workspace=workspace,
+        )
+        raise AssertionError("credential-bearing repository web URL must fail")
+    except ValueError:
+        assert not (workspace.registry / "credential-web-url.json").exists()
     current = repository_status.inspect_repository(project, record["repository"])
     assert current["state"] == "current", current
+    assert len(current["local_revision"]) == 40
+    assert current["local_revision"] == current["remote_revision"]
     second = root / "second"
     subprocess.run(["git", "clone", "-b", "main", str(remote), str(second)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(second), "config", "user.name", "Synthetic Test"], check=True)
@@ -321,8 +346,13 @@ with tempfile.TemporaryDirectory() as temp:
         subprocess.run([sys.executable, str(INITIALIZE), "--data-dir", str(workspace_root)],
                        check=True, capture_output=True, text=True)
     source_workspace = workspace_module.require_workspace(source)
-    project_registry.register_project("portable-project", project, detect_git=False,
-                                      workspace=source_workspace)
+    project_registry.register_project(
+        "portable-project", project,
+        repository_url="ssh://git@code.example.invalid/team/portable.git",
+        repository_web="https://code.example.invalid/team/portable",
+        source_url="https://docs.example.invalid/portable", branch="main",
+        workspace=source_workspace,
+    )
     source_workspace.config.write_text(json.dumps({
         "schema_version": 1,
         "launcher": {"host": "127.0.0.1"},
@@ -356,6 +386,13 @@ with tempfile.TemporaryDirectory() as temp:
     ], check=True, capture_output=True, text=True)
     imported = json.loads((target / "launcher.config.json").read_text(encoding="utf-8"))
     assert "env" not in imported["services"][0]
+    imported_registration = json.loads(
+        (target / "registry" / "projects" / "portable-project.json").read_text(encoding="utf-8")
+    )
+    assert imported_registration["repository"]["webUrl"] == (
+        "https://code.example.invalid/team/portable"
+    )
+    assert imported_registration["sourceUrl"] == "https://docs.example.invalid/portable"
     assert (target / "adapters" / "portable" / "start.py").is_file()
 print("OK: sanitized configuration bundle preview and round-trip")
 
@@ -445,6 +482,20 @@ with tempfile.TemporaryDirectory() as temp:
         "file": "pyproject.toml", "key_path": "project.version", "prefix": "v"
     }
     assert manager._display_version(service) == "v2.1.0"
+    service["display"]["version_from"] = {
+        "command": [sys.executable, "-c", "print('tool version 3.4.5')"],
+        "regex": r"version\s+([^\s]+)", "prefix": "v",
+        "timeout_seconds": 1, "refresh_seconds": 5,
+    }
+    manager.version_cache.pop("web", None)
+    assert manager._display_version(service) == "v3.4.5"
+    manager.version_cache["web"] = (0, "v3.4.5")
+    service["display"]["version_from"]["command"] = [sys.executable, "-c", "raise SystemExit(1)"]
+    assert manager._display_version(service) == "v3.4.5"
+    command_config = json.loads(path.read_text(encoding="utf-8"))
+    command_config["services"][0]["display"]["version_from"] = service["display"]["version_from"]
+    path.write_text(json.dumps(command_config), encoding="utf-8")
+    assert validate_config.validate(path) == []
 print("OK: project-owned name and port drift")
 
 with tempfile.TemporaryDirectory() as temp:

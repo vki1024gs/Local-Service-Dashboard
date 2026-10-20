@@ -45,6 +45,8 @@ def export_bundle(output: Path, adapter_names: list[str], data_dir: str | None) 
     for project_ref in sorted({item["project_ref"] for item in config.get("services", [])}):
         record = load_registration(project_ref, workspace)
         portable = {"projectRef": project_ref, "visibleName": record["visibleName"]}
+        if record.get("sourceUrl"):
+            portable["sourceUrl"] = record["sourceUrl"]
         if record.get("repository"):
             portable["repository"] = record["repository"]
         registrations.append(portable)
@@ -123,6 +125,8 @@ def stage_bundle(bundle: dict, mappings: dict[str, Path], root: Path) -> list[st
             target,
             visible_name=registration.get("visibleName"),
             repository_url=repository.get("url"),
+            repository_web=repository.get("webUrl"),
+            source_url=registration.get("sourceUrl"),
             branch=repository.get("branch"),
             remote=repository.get("remote", "origin"),
             detect_git=False,
@@ -189,7 +193,9 @@ def import_bundle(path: Path, mappings: dict[str, Path], apply: bool, data_dir: 
                 register_project(
                     registration["projectRef"], mappings[registration["projectRef"]],
                     visible_name=registration.get("visibleName"),
-                    repository_url=repository.get("url"), branch=repository.get("branch"),
+                    repository_url=repository.get("url"), repository_web=repository.get("webUrl"),
+                    source_url=registration.get("sourceUrl"),
+                    branch=repository.get("branch"),
                     remote=repository.get("remote", "origin"), detect_git=False, workspace=workspace,
                     _locked=True,
                 )
