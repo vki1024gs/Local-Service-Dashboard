@@ -110,7 +110,9 @@ if sys.platform == "win32":
         copied_launcher.write_text(windows_launcher.read_text(encoding="utf-8"), encoding="utf-8")
         marker = root / "windows-launch-ok.txt"
         (root / "dashboard" / "launcher.py").write_text(
+            "import os, tempfile, time\n"
             "from pathlib import Path\n"
+            "os.chdir(tempfile.gettempdir())\n"
             f"Path({str(marker)!r}).write_text('ok', encoding='utf-8')\n",
             encoding="utf-8",
         )
@@ -125,6 +127,7 @@ if sys.platform == "win32":
         while not marker.exists() and time.monotonic() < deadline:
             time.sleep(0.05)
         assert marker.read_text(encoding="utf-8") == "ok"
+        time.sleep(0.5)
     print("OK: Windows console-free launcher executes the Dashboard entrypoint")
 
 with tempfile.TemporaryDirectory() as temp:
