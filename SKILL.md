@@ -43,7 +43,9 @@ This repository is the application and the canonical Agent kit. Real instance da
 
 ## Repository status
 
-Optional Git metadata is stored in the private registration record. Status checks are bounded, cached, background, and non-mutating. They may use `ls-remote` and local read-only inspection, but never fetch, pull, checkout, merge, update refs, or modify the worktree. Show `update_available` only when ancestry is already provable; otherwise show that the remote is different. Repository availability never changes service health and never enables lifecycle Update.
+Optional Git metadata is stored in the private registration record. Status checks are bounded, cached, background, and non-mutating. They run once on first observation by default and then only on explicit user refresh; a positive configured interval explicitly opts into periodic checking. They may use `ls-remote` and local read-only inspection, but never fetch, pull, checkout, merge, update refs, or modify the worktree. Show `update_available` only when ancestry is already provable; otherwise show that the remote is different. Repository availability never changes service health and never enables lifecycle Update.
+
+On Windows, launch through `launch-dashboard.vbs` to avoid a console window. Dashboard-owned subprocesses must use the shared hidden-process policy while preserving captured diagnostics and process-group control.
 
 ## Migration and bundles
 

@@ -7,8 +7,8 @@ repository/                         workspace (ignored)
 ├─ dashboard/ runtime + UI          ├─ workspace.json
 ├─ scripts/ tools                   ├─ launcher.config.json
 ├─ examples/ recipes/ references/   ├─ registry/projects/
-└─ SKILL.md                         ├─ projects/ links or pointers
-                                    ├─ adapters/ entrypoints/
+├─ launch-dashboard.vbs             ├─ projects/ links or pointers
+└─ SKILL.md                         ├─ adapters/ entrypoints/
                                     └─ logs/ reports/ cache/ backups/ imports/
 ```
 
@@ -41,6 +41,8 @@ Use only `static-web`, `frontend`, `backend`, or `service`. Lifecycle commands r
 Only one lifecycle action may affect a service at a time. Restart is verified stop then start. A safe updater uses a cross-process lock, unique temporary output, validation, atomic replacement, and monotonic `LAUNCHER_PROGRESS` records. Dashboard exit is rejected while an action runs.
 
 Repository checks are background, cached, bounded, and non-mutating. They may compare `ls-remote` with already-known local commits; they never fetch, pull, merge, checkout, or update refs.
+
+Repository checks are startup-only by default and may be explicitly refreshed from the WebUI. Positive configured intervals opt into periodic checking. On Windows, `launch-dashboard.vbs` is the console-free entrypoint and Dashboard-owned subprocesses use hidden creation flags while retaining captured diagnostics.
 
 ## Drift test
 

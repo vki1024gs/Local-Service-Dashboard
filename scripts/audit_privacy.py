@@ -17,7 +17,7 @@ HIGH_CONFIDENCE_SECRET = re.compile(
 )
 TEXT_SUFFIXES = {
     ".md", ".json", ".yaml", ".yml", ".toml", ".txt", ".py", ".js", ".css",
-    ".html", ".bat", ".command", ".sh", ".ps1",
+    ".html", ".bat", ".vbs", ".command", ".sh", ".ps1",
 }
 PRIVATE_ARTIFACT_SUFFIXES = {".log", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".mov"}
 PRIVATE_PREFIXES = (".local-dashboard/", ".env.local", "dashboard-app/")
@@ -84,6 +84,7 @@ def main() -> int:
         "README.md",
         "launch-dashboard.command",
         "launch-dashboard.bat",
+        "launch-dashboard.vbs",
     ):
         if not (ROOT / required).exists():
             errors.append(f"repository is missing required structure: {required}")

@@ -29,6 +29,7 @@ jobs:
         run: >-
           python -m py_compile
           dashboard/launcher.py
+          dashboard/process_utils.py
           dashboard/project_registry.py
           dashboard/repository_status.py
           dashboard/workspace.py

@@ -10,11 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-
-def _hidden_window_kwargs() -> dict[str, int]:
-    if os.name == "nt":
-        return {"creationflags": subprocess.CREATE_NO_WINDOW}
-    return {}
+from process_utils import hidden_process_kwargs
 
 
 def _run_git(target: Path, args: list[str], timeout: float = 4) -> subprocess.CompletedProcess[str]:
@@ -25,7 +21,7 @@ def _run_git(target: Path, args: list[str], timeout: float = 4) -> subprocess.Co
         timeout=timeout,
         check=False,
         env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"},
-        **_hidden_window_kwargs(),
+        **hidden_process_kwargs(),
     )
 
 
@@ -61,7 +57,7 @@ def inspect_repository(target: Path, repository: dict[str, str]) -> dict[str, An
                 timeout=5,
                 check=False,
                 env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"},
-                **_hidden_window_kwargs(),
+                **hidden_process_kwargs(),
             )
         except subprocess.TimeoutExpired:
             return {
@@ -113,7 +109,7 @@ def inspect_repository(target: Path, repository: dict[str, str]) -> dict[str, An
 
 
 class RepositoryStatusMonitor:
-    def __init__(self, interval_seconds: float = 900):
+    def __init__(self, interval_seconds: float = 0):
         requested_interval = float(interval_seconds)
         self.interval_seconds = 0.0 if requested_interval == 0 else max(30.0, requested_interval)
         self.results: dict[str, dict[str, Any]] = {}
@@ -149,9 +145,10 @@ class RepositoryStatusMonitor:
                     daemon=True,
                     name=f"repository-status-{project_ref}",
                 ).start()
+            refreshing = project_ref in self.checking
             if current is None:
                 return {"state": "checking", "checked_at": None}
-            return dict(current)
+            return {**current, "refreshing": refreshing}
 
     def _check(self, project_ref: str, target: Path, repository: dict[str, str]) -> None:
         result = inspect_repository(target, repository)

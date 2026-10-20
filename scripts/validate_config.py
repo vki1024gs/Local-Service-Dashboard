@@ -97,7 +97,7 @@ def validate(path: Path) -> list[str]:
     idle_exit = launcher.get("exit_when_no_clients_seconds", 0)
     if not isinstance(idle_exit, (int, float)) or idle_exit < 0:
         errors.append("launcher.exit_when_no_clients_seconds must be zero or greater")
-    repository_interval = launcher.get("repository_check_interval_seconds", 900)
+    repository_interval = launcher.get("repository_check_interval_seconds", 0)
     if (
         not isinstance(repository_interval, (int, float))
         or isinstance(repository_interval, bool)

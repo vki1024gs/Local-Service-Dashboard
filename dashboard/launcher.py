@@ -31,6 +31,7 @@ except ModuleNotFoundError:  # Python 3.10 compatibility.
 sys.dont_write_bytecode = True
 
 from project_registry import load_registration, resolve_project_ref as resolve_registered_project
+from process_utils import hidden_process_kwargs
 from repository_status import RepositoryStatusMonitor
 from workspace import validate_marker, workspace_paths
 
@@ -229,7 +230,7 @@ class ServiceManager:
         self.http_health_cache: dict[str, tuple[float, bool]] = {}
         self.health_locks = {service_id: threading.Lock() for service_id in self.services}
         self.repository_monitor = RepositoryStatusMonitor(
-            config.get("launcher", {}).get("repository_check_interval_seconds", 900)
+            config.get("launcher", {}).get("repository_check_interval_seconds", 0)
         )
         LOG_DIR.mkdir(exist_ok=True)
 
@@ -310,7 +311,7 @@ class ServiceManager:
             "shell": isinstance(command, str),
         }
         if os.name == "nt":
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            kwargs.update(hidden_process_kwargs(new_process_group=True))
         else:
             kwargs["start_new_session"] = True
         try:
@@ -352,7 +353,8 @@ class ServiceManager:
             return
         if os.name == "nt":
             subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+                           **hidden_process_kwargs())
         else:
             try:
                 os.killpg(process.pid, signal.SIGTERM)
@@ -385,7 +387,7 @@ class ServiceManager:
             "text": True, "encoding": "utf-8", "errors": "replace", "bufsize": 1,
         }
         if os.name == "nt":
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            kwargs.update(hidden_process_kwargs(new_process_group=True))
         else:
             kwargs["start_new_session"] = True
         log_path = LOG_DIR / f"{service['id']}.log"
@@ -756,6 +758,7 @@ class ServiceManager:
                         shell=isinstance(command, str), stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                         timeout=float(health.get("timeout_seconds", 2)), check=False,
+                        **hidden_process_kwargs(),
                     )
                 return result.returncode == 0
             except (OSError, subprocess.TimeoutExpired, ValueError):
@@ -884,6 +887,20 @@ class ServiceManager:
                 item["health"] = service["_last_observability_health"]
             result.append(item)
         return result
+
+    def refresh_repository(self, service_id: str) -> dict[str, Any]:
+        service = self._service(service_id)
+        repository = service.get("repository")
+        if not repository:
+            raise ActionError(
+                "repository_not_configured",
+                "repository-refresh",
+                "该服务没有配置远端仓库",
+            )
+        self.repository_monitor.status(
+            service["project_ref"], Path(service["cwd"]), repository, force=True
+        )
+        return {"status": "checking"}
 
     def log_tail(self, service_id: str, limit: int = 24000) -> str:
         service = self._service(service_id)
@@ -1026,6 +1043,9 @@ def make_handler(manager: ServiceManager, token: str, title: str, monitor_interv
                 return
             _, action, service_id = parts
             try:
+                if action == "repository-refresh":
+                    self._json(202, manager.refresh_repository(service_id))
+                    return
                 if action not in ("start", "stop", "restart", "update"):
                     raise ValueError("Unsupported action")
                 self._json(200, getattr(manager, action)(service_id))
