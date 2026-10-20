@@ -13,6 +13,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
+from process_utils import hidden_process_kwargs
 from workspace import (WorkspacePaths, atomic_write_bytes, atomic_write_json, operation_lock,
                        require_workspace)
 
@@ -32,6 +33,7 @@ def _git(target: Path, *args: str) -> str | None:
             timeout=3,
             check=False,
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            **hidden_process_kwargs(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -184,6 +186,7 @@ def _create_shortcut(path: Path, target: Path) -> str:
                 capture_output=True,
                 text=True,
                 check=False,
+                **hidden_process_kwargs(),
             )
             if result.returncode == 0:
                 return "JUNCTION"

@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from process_utils import hidden_process_kwargs
 from project_registry import repository_web_url
 
 
@@ -21,6 +22,7 @@ def _run_git(target: Path, args: list[str], timeout: float = 4) -> subprocess.Co
         timeout=timeout,
         check=False,
         env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"},
+        **hidden_process_kwargs(),
     )
 
 
@@ -68,6 +70,7 @@ def inspect_repository(target: Path, repository: dict[str, str]) -> dict[str, An
                 timeout=5,
                 check=False,
                 env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"},
+                **hidden_process_kwargs(),
             )
         except subprocess.TimeoutExpired:
             return {
@@ -111,8 +114,9 @@ def inspect_repository(target: Path, repository: dict[str, str]) -> dict[str, An
 
 
 class RepositoryStatusMonitor:
-    def __init__(self, interval_seconds: float = 900):
-        self.interval_seconds = max(30.0, float(interval_seconds))
+    def __init__(self, interval_seconds: float = 0):
+        requested_interval = float(interval_seconds)
+        self.interval_seconds = 0.0 if requested_interval == 0 else max(30.0, requested_interval)
         self.results: dict[str, dict[str, Any]] = {}
         self.checking: set[str] = set()
         self.lock = threading.Lock()
@@ -130,7 +134,14 @@ class RepositoryStatusMonitor:
         now = time.time()
         with self.lock:
             current = self.results.get(project_ref)
-            stale = force or current is None or now - float(current.get("checked_at", 0)) >= self.interval_seconds
+            stale = (
+                force
+                or current is None
+                or (
+                    self.interval_seconds > 0
+                    and now - float(current.get("checked_at", 0)) >= self.interval_seconds
+                )
+            )
             if stale and project_ref not in self.checking:
                 self.checking.add(project_ref)
                 threading.Thread(
@@ -139,14 +150,16 @@ class RepositoryStatusMonitor:
                     daemon=True,
                     name=f"repository-status-{project_ref}",
                 ).start()
+            refreshing = project_ref in self.checking
             if current is None:
                 return {
                     "state": "checking",
                     "checked_at": None,
                     "tracked_branch": repository.get("branch"),
                     "web_url": repository_web_url(repository),
+                    "refreshing": refreshing,
                 }
-            return dict(current)
+            return {**current, "refreshing": refreshing}
 
     def _check(self, project_ref: str, target: Path, repository: dict[str, str]) -> None:
         result = inspect_repository(target, repository)

@@ -31,7 +31,7 @@ python3 dashboard/launcher.py --check-config
 ./launch-dashboard.command
 ```
 
-On Windows run `launch-dashboard.bat`. The WebUI binds to `127.0.0.1`, uses a random session token for actions, and keeps service health separate from repository-version status.
+On Windows double-click `launch-dashboard.vbs` for a console-free launch; `launch-dashboard.bat` remains a compatibility entrypoint and delegates to it. Lifecycle, health, registration, and repository-check child processes are also created without a console window. Their captured output remains available through Dashboard logs and errors. The WebUI binds to `127.0.0.1`, uses a random session token for actions, and keeps service health separate from repository-version status.
 
 ## Private workspace
 
@@ -65,7 +65,7 @@ Each service uses a registered `project_ref`. It declares separate concerns:
 
 `display.version_from` may instead run a short, read-only version command with a required capture regex. Command results are bounded, cached, and time-limited; the last successful value survives a later transient command failure. Use this for installed binaries and containerized applications that do not publish a local JSON/TOML manifest.
 
-Repository checks use bounded `git ls-remote` and local read-only commands. They never fetch, pull, merge, checkout, or change refs. An unequal revision is shown as “远端版本不同” unless local ancestry already proves “有更新”, “领先”, or “已分叉”. Hovering the notice shows the application version plus the local/remote Git revisions and branches; More links to the validated browser URL. A repository warning does not make a healthy service unhealthy and never creates an Update action.
+Repository checks use bounded `git ls-remote` and local read-only commands. They run once on first observation by default; use “检查版本” in a service card's More menu for an explicit refresh. A positive `launcher.repository_check_interval_seconds` value of at least 30 seconds opts into periodic checking. Checks never fetch, pull, merge, checkout, or change refs. An unequal revision is shown as “远端版本不同” unless local ancestry already proves “有更新”, “领先”, or “已分叉”. Hovering the notice shows the application version plus the local/remote Git revisions and branches; More links to the validated browser URL. A repository warning does not make a healthy service unhealthy and never creates an Update action.
 
 See [configuration contract](references/configuration.md), [architecture](ARCHITECTURE.md), and [Agent workflow](SKILL.md).
 

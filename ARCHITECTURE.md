@@ -10,7 +10,8 @@ repository (tracked)                 local workspace (ignored)
 ├─ references/ contracts             ├─ projects/ links or pointers
 ├─ recipes/ reusable patterns        ├─ adapters/ and entrypoints/
 ├─ examples/ synthetic fixtures      ├─ logs/ reports/ cache/
-└─ SKILL.md Agent workflow           └─ backups/ imports/
+├─ launch-dashboard.vbs               └─ backups/ imports/
+└─ SKILL.md Agent workflow
                  │
                  └── explicit registration ──> external service projects
 ```
@@ -28,6 +29,8 @@ Runtime health and Git repository status are independent:
 - `ports` reports declared endpoint roles and collisions;
 - lifecycle update executes only an explicitly configured project workflow;
 - repository status performs bounded, cached, non-mutating comparison and may report current, newer remote, ahead, diverged, different, or unavailable.
+
+Repository comparison runs once on first observation by default and only repeats on an explicit user refresh unless a positive periodic interval is configured. Windows GUI launch and Dashboard-owned child processes are console-free; diagnostic output is captured rather than displayed in transient terminal windows.
 
 The browser UI is an authenticated localhost control surface, not a general process supervisor. It does not scan ports, infer projects, auto-restart services, or kill unknown listeners.
 

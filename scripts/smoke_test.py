@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -15,12 +16,14 @@ LAUNCHER = ROOT / "dashboard" / "launcher.py"
 INITIALIZE = ROOT / "scripts" / "init_dashboard.py"
 REGISTER_PROJECT = ROOT / "dashboard" / "register_project.py"
 BUNDLE = ROOT / "scripts" / "config_bundle.py"
+VALIDATE_CONFIG = ROOT / "scripts" / "validate_config.py"
 assert LAUNCHER.is_file()
 assert not any(any(ord(character) > 127 for character in path.name) for path in ROOT.rglob("*")
                if ".git" not in path.parts and ".local-dashboard" not in path.parts)
 sys.path.insert(0, str(ROOT / "dashboard"))
 
 import project_registry
+import process_utils
 import repository_status
 import validate_config
 import workspace as workspace_module
@@ -60,6 +63,26 @@ with tempfile.TemporaryDirectory() as temp:
     assert refused.returncode != 0 and "incompatible" in refused.stderr.lower()
 print("OK: in-place Dashboard initialization creates private state only")
 
+with tempfile.TemporaryDirectory() as temp:
+    config = Path(temp) / "launcher.config.json"
+    config.write_text(json.dumps({
+        "schema_version": 1,
+        "launcher": {"host": "127.0.0.1", "repository_check_interval_seconds": 0},
+        "services": [],
+    }), encoding="utf-8")
+    validated = subprocess.run(
+        [sys.executable, str(VALIDATE_CONFIG), str(config)], capture_output=True, text=True
+    )
+    assert validated.returncode == 0, validated.stdout + validated.stderr
+    document = json.loads(config.read_text(encoding="utf-8"))
+    document["launcher"]["repository_check_interval_seconds"] = False
+    config.write_text(json.dumps(document), encoding="utf-8")
+    rejected = subprocess.run(
+        [sys.executable, str(VALIDATE_CONFIG), str(config)], capture_output=True, text=True
+    )
+    assert rejected.returncode != 0
+print("OK: zero repository interval is valid for startup-only checks")
+
 before_status = subprocess.run(["git", "status", "--short"], cwd=ROOT, check=True,
                                capture_output=True, text=True).stdout
 subprocess.run([sys.executable, str(INITIALIZE)], cwd=ROOT, check=True,
@@ -70,6 +93,42 @@ assert before_status == after_status
 subprocess.run(["git", "check-ignore", "-q", ".local-dashboard/workspace.json"],
                cwd=ROOT, check=True)
 print("OK: default local workspace use leaves Git status unchanged")
+
+windows_launcher = ROOT / "launch-dashboard.vbs"
+assert windows_launcher.is_file()
+assert "pyw.exe -3" in windows_launcher.read_text(encoding="utf-8").lower()
+batch_launcher = (ROOT / "launch-dashboard.bat").read_text(encoding="utf-8").lower()
+assert "wscript.exe" in batch_launcher
+assert "dashboard\\launcher.py" not in batch_launcher
+print("OK: Windows entrypoint delegates to the console-free launcher")
+
+if sys.platform == "win32":
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        (root / "dashboard").mkdir()
+        copied_launcher = root / "launch-dashboard.vbs"
+        copied_launcher.write_text(windows_launcher.read_text(encoding="utf-8"), encoding="utf-8")
+        marker = root / "windows-launch-ok.txt"
+        (root / "dashboard" / "launcher.py").write_text(
+            "import os, tempfile, time\n"
+            "from pathlib import Path\n"
+            "os.chdir(tempfile.gettempdir())\n"
+            f"Path({str(marker)!r}).write_text('ok', encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+        launched = subprocess.run(
+            ["cscript.exe", "//nologo", str(copied_launcher)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert launched.returncode == 0, launched.stdout + launched.stderr
+        deadline = time.monotonic() + 5
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert marker.read_text(encoding="utf-8") == "ok"
+        time.sleep(0.5)
+    print("OK: Windows console-free launcher executes the Dashboard entrypoint")
 
 with tempfile.TemporaryDirectory() as temp:
     root = Path(temp)
@@ -204,6 +263,82 @@ with mock.patch.object(repository_status, "inspect_repository", side_effect=synt
     assert observed["state"] == "current" and len(calls) == 1
 print("OK: repository status monitor is cached and single-flight")
 
+startup_only_monitor = repository_status.RepositoryStatusMonitor(interval_seconds=0)
+startup_check_finished = threading.Event()
+startup_calls = []
+
+def synthetic_startup_check(target, repository):
+    startup_calls.append((target, repository))
+    startup_check_finished.set()
+    return {"state": "current", "checked_at": 1}
+
+with mock.patch.object(repository_status, "inspect_repository", side_effect=synthetic_startup_check):
+    metadata = {"url": "https://example.invalid/repository.git", "branch": "main", "remote": "origin"}
+    assert startup_only_monitor.status("startup-only", ROOT, metadata)["state"] == "checking"
+    assert startup_check_finished.wait(timeout=2)
+    for _ in range(100):
+        observed = startup_only_monitor.status("startup-only", ROOT, metadata)
+        if observed["state"] == "current":
+            break
+        threading.Event().wait(0.01)
+    for _ in range(10):
+        startup_only_monitor.status("startup-only", ROOT, metadata)
+        threading.Event().wait(0.01)
+    assert observed["state"] == "current" and len(startup_calls) == 1
+print("OK: zero repository interval checks once at startup only")
+
+refresh_started = threading.Event()
+release_refresh = threading.Event()
+
+def synthetic_manual_refresh(target, repository):
+    refresh_started.set()
+    assert release_refresh.wait(timeout=2)
+    return {"state": "update_available", "checked_at": 2}
+
+with mock.patch.object(repository_status, "inspect_repository", side_effect=synthetic_manual_refresh):
+    forced = startup_only_monitor.status("startup-only", ROOT, metadata, force=True)
+    assert forced["state"] == "current" and forced["refreshing"] is True
+    assert refresh_started.wait(timeout=2)
+    assert startup_only_monitor.status("startup-only", ROOT, metadata)["refreshing"] is True
+    release_refresh.set()
+    for _ in range(100):
+        refreshed = startup_only_monitor.status("startup-only", ROOT, metadata)
+        if refreshed["state"] == "update_available" and not refreshed["refreshing"]:
+            break
+        threading.Event().wait(0.01)
+    assert refreshed["state"] == "update_available" and refreshed["refreshing"] is False
+print("OK: explicit repository refresh reports progress and replaces the cached result")
+
+if sys.platform == "win32":
+    completed = subprocess.CompletedProcess(["git"], 0, stdout="", stderr="")
+    with mock.patch.object(repository_status.subprocess, "run", return_value=completed) as run_git:
+        repository_status._run_git(ROOT, ["status"])
+    assert run_git.call_args.kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
+
+    revision = "a" * 40
+    results = [
+        subprocess.CompletedProcess(["git"], 0, stdout=f"{revision}\n", stderr=""),
+        subprocess.CompletedProcess(["git"], 0, stdout="main\n", stderr=""),
+        subprocess.CompletedProcess(["git"], 0, stdout="", stderr=""),
+        subprocess.CompletedProcess(["git"], 0, stdout=f"{revision}\trefs/heads/main\n", stderr=""),
+    ]
+    with mock.patch.object(repository_status.subprocess, "run", side_effect=results) as all_git:
+        repository_status.inspect_repository(
+            ROOT, {"url": "https://example.invalid/repository.git", "branch": "main", "remote": "origin"}
+        )
+    assert len(all_git.call_args_list) == 4
+    assert all(
+        call.kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
+        for call in all_git.call_args_list
+    )
+    with mock.patch.object(project_registry.subprocess, "run", return_value=completed) as registry_git:
+        project_registry._git(ROOT, "status")
+    assert registry_git.call_args.kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
+    grouped_flags = process_utils.hidden_process_kwargs(new_process_group=True)["creationflags"]
+    assert grouped_flags & subprocess.CREATE_NO_WINDOW
+    assert grouped_flags & subprocess.CREATE_NEW_PROCESS_GROUP
+    print("OK: Dashboard-owned Windows child processes use hidden creation flags")
+
 with tempfile.TemporaryDirectory() as temp:
     root = Path(temp)
     project = root / "portable-project"
@@ -302,6 +437,7 @@ with tempfile.TemporaryDirectory() as temp:
     }), encoding="utf-8")
     config = launcher.load_config(path)
     manager = launcher.ServiceManager(config)
+    assert manager.repository_monitor.interval_seconds == 0
     assert manager.services["probe"]["cwd"] == str(project.resolve())
     assert manager.services["probe"]["env"]["PROJECT_ROOT"] == str(project.resolve())
     assert manager.start("probe")["running"]
@@ -610,6 +746,38 @@ shutdown_handler.do_POST()
 assert shutdown_handler.response == (202, {"status": "shutting-down"})
 assert shutdown_handler.server.shutdown_called.wait(timeout=1)
 print("OK: authenticated WebUI shutdown exits the dashboard server")
+
+
+class RepositoryRefreshManager(ShutdownManager):
+    def __init__(self):
+        self.refreshed = None
+
+    def refresh_repository(self, service_id):
+        self.refreshed = service_id
+        return {"status": "checking"}
+
+
+repository_refresh_manager = RepositoryRefreshManager()
+repository_refresh_handler_base = launcher.make_handler(
+    repository_refresh_manager, "synthetic-token", "Synthetic Launcher"
+)
+
+
+class SyntheticRepositoryRefreshHandler(repository_refresh_handler_base):
+    def __init__(self):
+        self.path = "/api/repository-refresh/probe"
+        self.headers = {"X-Launcher-Token": "synthetic-token"}
+        self.response = None
+
+    def _json(self, status, payload):
+        self.response = (status, payload)
+
+
+repository_refresh_handler = SyntheticRepositoryRefreshHandler()
+repository_refresh_handler.do_POST()
+assert repository_refresh_handler.response == (202, {"status": "checking"})
+assert repository_refresh_manager.refreshed == "probe"
+print("OK: authenticated manual repository refresh is explicit and asynchronous")
 
 
 class BusyShutdownManager(ShutdownManager):

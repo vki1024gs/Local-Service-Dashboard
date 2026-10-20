@@ -5,6 +5,7 @@
     "host": "127.0.0.1",
     "port": 17321,
     "monitor_interval_seconds": 1,
+    "repository_check_interval_seconds": 0,
     "stop_services_on_exit": false
   },
   "services": []
