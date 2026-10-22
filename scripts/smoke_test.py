@@ -313,7 +313,13 @@ if sys.platform == "win32":
     completed = subprocess.CompletedProcess(["git"], 0, stdout="", stderr="")
     with mock.patch.object(repository_status.subprocess, "run", return_value=completed) as run_git:
         repository_status._run_git(ROOT, ["status"])
-    assert run_git.call_args.kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
+    git_kwargs = run_git.call_args.kwargs
+    assert git_kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
+    assert git_kwargs["startupinfo"].dwFlags & subprocess.STARTF_USESHOWWINDOW
+    assert git_kwargs["startupinfo"].wShowWindow == subprocess.SW_HIDE
+    assert git_kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+    assert git_kwargs["env"]["GCM_INTERACTIVE"] == "Never"
+    assert git_kwargs["env"]["GCM_MODAL_PROMPT"] == "0"
 
     revision = "a" * 40
     results = [
@@ -337,7 +343,24 @@ if sys.platform == "win32":
     grouped_flags = process_utils.hidden_process_kwargs(new_process_group=True)["creationflags"]
     assert grouped_flags & subprocess.CREATE_NO_WINDOW
     assert grouped_flags & subprocess.CREATE_NEW_PROCESS_GROUP
-    print("OK: Dashboard-owned Windows child processes use hidden creation flags")
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        marker = root / "console-handle.txt"
+        probe = root / "console_probe.py"
+        probe.write_text(
+            "import ctypes, sys\n"
+            "from pathlib import Path\n"
+            "Path(sys.argv[1]).write_text(str(ctypes.windll.kernel32.GetConsoleWindow()), "
+            "encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+        subprocess.run(
+            [sys.executable, str(probe), str(marker)],
+            check=True,
+            **process_utils.hidden_process_kwargs(),
+        )
+        assert marker.read_text(encoding="utf-8") == "0"
+    print("OK: Dashboard-owned Windows child processes have no console handle")
 
 with tempfile.TemporaryDirectory() as temp:
     root = Path(temp)

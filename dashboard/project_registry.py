@@ -13,7 +13,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from process_utils import hidden_process_kwargs
+from process_utils import hidden_process_kwargs, noninteractive_git_environment
 from workspace import (WorkspacePaths, atomic_write_bytes, atomic_write_json, operation_lock,
                        require_workspace)
 
@@ -32,7 +32,7 @@ def _git(target: Path, *args: str) -> str | None:
             text=True,
             timeout=3,
             check=False,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            env=noninteractive_git_environment(),
             **hidden_process_kwargs(),
         )
     except (OSError, subprocess.TimeoutExpired):

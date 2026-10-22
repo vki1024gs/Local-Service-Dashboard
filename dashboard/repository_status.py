@@ -3,14 +3,13 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 import threading
 import time
 from pathlib import Path
 from typing import Any
 
-from process_utils import hidden_process_kwargs
+from process_utils import hidden_process_kwargs, noninteractive_git_environment
 from project_registry import repository_web_url
 
 
@@ -21,7 +20,7 @@ def _run_git(target: Path, args: list[str], timeout: float = 4) -> subprocess.Co
         text=True,
         timeout=timeout,
         check=False,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"},
+        env=noninteractive_git_environment(),
         **hidden_process_kwargs(),
     )
 
@@ -69,7 +68,7 @@ def inspect_repository(target: Path, repository: dict[str, str]) -> dict[str, An
                 text=True,
                 timeout=5,
                 check=False,
-                env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"},
+                env=noninteractive_git_environment(),
                 **hidden_process_kwargs(),
             )
         except subprocess.TimeoutExpired:

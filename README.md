@@ -31,7 +31,7 @@ python3 dashboard/launcher.py --check-config
 ./launch-dashboard.command
 ```
 
-On Windows double-click `launch-dashboard.vbs` for a console-free launch; `launch-dashboard.bat` remains a compatibility entrypoint and delegates to it. Lifecycle, health, registration, and repository-check child processes are also created without a console window. Their captured output remains available through Dashboard logs and errors. The WebUI binds to `127.0.0.1`, uses a random session token for actions, and keeps service health separate from repository-version status.
+On Windows double-click `launch-dashboard.vbs` for a console-free launch; `launch-dashboard.bat` remains a compatibility entrypoint and may briefly show its own compatibility shell before delegating. Lifecycle, health, registration, and repository-check child processes use both no-console creation flags and a hidden startup window. Background Git also disables terminal and credential-manager prompts. Captured output remains available through Dashboard logs and errors. The WebUI binds to `127.0.0.1`, uses a random session token for actions, and keeps service health separate from repository-version status.
 
 ## Private workspace
 

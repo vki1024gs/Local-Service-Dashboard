@@ -30,7 +30,7 @@ Runtime health and Git repository status are independent:
 - lifecycle update executes only an explicitly configured project workflow;
 - repository status performs bounded, cached, non-mutating comparison and may report current, newer remote, ahead, diverged, different, or unavailable.
 
-Repository comparison runs once on first observation by default and only repeats on an explicit user refresh unless a positive periodic interval is configured. Windows GUI launch and Dashboard-owned child processes are console-free; diagnostic output is captured rather than displayed in transient terminal windows.
+Repository comparison runs once on first observation by default and only repeats on an explicit user refresh unless a positive periodic interval is configured. Windows GUI launch and Dashboard-owned child processes are console-free through both process-creation and startup-window controls; background Git also disables terminal and credential-manager interaction. Diagnostic output is captured rather than displayed in transient terminal windows.
 
 The browser UI is an authenticated localhost control surface, not a general process supervisor. It does not scan ports, infer projects, auto-restart services, or kill unknown listeners.
 

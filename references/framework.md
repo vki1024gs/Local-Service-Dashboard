@@ -42,7 +42,7 @@ Only one lifecycle action may affect a service at a time. Restart is verified st
 
 Repository checks are background, cached, bounded, and non-mutating. They may compare `ls-remote` with already-known local commits; they never fetch, pull, merge, checkout, or update refs.
 
-Repository checks are startup-only by default and may be explicitly refreshed from the WebUI. Positive configured intervals opt into periodic checking. On Windows, `launch-dashboard.vbs` is the console-free entrypoint and Dashboard-owned subprocesses use hidden creation flags while retaining captured diagnostics.
+Repository checks are startup-only by default and may be explicitly refreshed from the WebUI. Positive configured intervals opt into periodic checking. On Windows, `launch-dashboard.vbs` is the console-free entrypoint and Dashboard-owned subprocesses combine no-console creation flags with a hidden startup window while retaining captured diagnostics. Background Git disables terminal and credential-manager prompts. The `.bat` entrypoint is compatibility-only and may briefly show its own shell.
 
 ## Drift test
 
