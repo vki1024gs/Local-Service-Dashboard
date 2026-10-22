@@ -44,13 +44,15 @@ const labels = {
 const problemLabels = {"health-check-failed":"健康检查失败", "stopped-unexpectedly":"意外停止", "startup-timeout":"启动超时"};
 const actionLabels = {
   start:"启动", stop:"停止", restart:"重启", update:"更新",
-  "repository-refresh":"检查版本"
+  "repository-refresh":"检查更新"
 };
 function hasIssue(service) { return Boolean(service.problem || service.port_conflicts?.length); }
 function shortRevision(value) { return value ? String(value).slice(0, 12) : "—"; }
 function repositoryNotice(repository, applicationVersion) {
   if (!repository) return "";
   const labels = {
+    current:"与远端一致",
+    unchecked:"尚未检查更新",
     checking:"正在检查版本", update_available:"有更新", ahead:"本地领先",
     diverged:"版本已分叉", unknown_relation:"远端版本不同", unavailable:"版本检查失败"
   };
@@ -61,6 +63,7 @@ function repositoryNotice(repository, applicationVersion) {
   if (!parts.length) return "";
   const warning = ["update_available", "diverged", "unknown_relation", "unavailable"].includes(repository.state);
   const details = [
+    repository.checked_at ? `上次检查：${dateTime(repository.checked_at)}` : "尚未完成检查",
     applicationVersion ? `应用版本：${applicationVersion}` : "",
     `本地 Git 版本：${shortRevision(repository.local_revision)}`,
     `远端 Git 版本：${shortRevision(repository.remote_revision)}`,
@@ -94,7 +97,7 @@ function card(service) {
   const startAction = !service.running && !operation ? `<button class="${service.url ? "" : "primary"}" data-action="start">启动</button>` : "";
   const menuActions = [
     `<button data-action="logs">查看日志</button>`,
-    service.repository ? `<button data-action="repository-refresh" ${service.repository.refreshing?"disabled":""}>检查版本</button>` : "",
+    service.repository ? `<button data-action="repository-refresh" title="比较远端 Git 版本，不安装更新" ${service.repository.refreshing?"disabled":""}>${service.repository.refreshing?"检查中…":"检查更新"}</button>` : "",
     service.source_url ? `<a class="menu-link" href="${esc(service.source_url)}" target="_blank" rel="noreferrer">远端项目</a>` : "",
     service.running && !operation ? `<button data-action="restart">重启</button>` : "",
     service.running && !operation ? `<button class="danger-action" data-action="stop">停止</button>` : "",
@@ -119,7 +122,8 @@ function cardRenderSignature(services) {
       dirty:service.repository.dirty,
       local_revision:service.repository.local_revision, remote_revision:service.repository.remote_revision,
       branch:service.repository.branch, tracked_branch:service.repository.tracked_branch,
-      web_url:service.repository.web_url
+      web_url:service.repository.web_url,
+      checked_at:service.repository.checked_at
     } : null,
     operation: service.operation ? {action:service.operation.action} : null,
     checks: Object.values(service.health?.checks || {}).map(check => ({name: check.name, status: check.status}))
@@ -253,7 +257,14 @@ servicesEl.addEventListener("click", async event => {
     await showLogs(id); return;
   }
   button.disabled = true;
-  try { await api(`/api/${action}/${id}`, {method:"POST"}); }
+  try {
+    await api(`/api/${action}/${id}`, {method:"POST"});
+    if (action === "repository-refresh") {
+      const services = await api("/api/services");
+      applySnapshot({services, observed_at:Date.now()/1000});
+      button.disabled = false;
+    }
+  }
   catch (error) { showActionError(id, action, error); button.disabled=false; }
 });
 

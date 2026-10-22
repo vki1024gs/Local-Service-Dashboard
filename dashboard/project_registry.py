@@ -27,7 +27,8 @@ REGISTRATION_SCHEMA_VERSION = 1
 def _git(target: Path, *args: str) -> str | None:
     try:
         result = subprocess.run(
-            ["git", "-C", str(target), *args],
+            ["git", "-c", "core.askPass=", "-C", str(target), *args],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=3,

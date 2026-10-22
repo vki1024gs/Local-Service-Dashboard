@@ -15,7 +15,8 @@ from project_registry import repository_web_url
 
 def _run_git(target: Path, args: list[str], timeout: float = 4) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", "-C", str(target), *args],
+        ["git", "-c", "core.askPass=", "-C", str(target), *args],
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -63,7 +64,8 @@ def inspect_repository(target: Path, repository: dict[str, str]) -> dict[str, An
         }
         try:
             remote = subprocess.run(
-                ["git", "ls-remote", "--heads", repository["url"], repository["branch"]],
+                ["git", "-c", "core.askPass=", "ls-remote", "--heads", repository["url"], repository["branch"]],
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -130,18 +132,10 @@ class RepositoryStatusMonitor:
     ) -> dict[str, Any] | None:
         if not repository:
             return None
-        now = time.time()
         with self.lock:
             current = self.results.get(project_ref)
-            stale = (
-                force
-                or current is None
-                or (
-                    self.interval_seconds > 0
-                    and now - float(current.get("checked_at", 0)) >= self.interval_seconds
-                )
-            )
-            if stale and project_ref not in self.checking:
+            # Legacy intervals remain readable, but observation never launches Git.
+            if force and project_ref not in self.checking:
                 self.checking.add(project_ref)
                 threading.Thread(
                     target=self._check,
@@ -152,7 +146,7 @@ class RepositoryStatusMonitor:
             refreshing = project_ref in self.checking
             if current is None:
                 return {
-                    "state": "checking",
+                    "state": "checking" if refreshing else "unchecked",
                     "checked_at": None,
                     "tracked_branch": repository.get("branch"),
                     "web_url": repository_web_url(repository),
@@ -161,7 +155,12 @@ class RepositoryStatusMonitor:
             return {**current, "refreshing": refreshing}
 
     def _check(self, project_ref: str, target: Path, repository: dict[str, str]) -> None:
-        result = inspect_repository(target, repository)
+        try:
+            result = inspect_repository(target, repository)
+        except Exception:
+            # A failed worker must release single-flight state so the user can retry.
+            result = {"state": "unavailable", "reason": "git_check_failed",
+                      "checked_at": time.time()}
         with self.lock:
             self.results[project_ref] = result
             self.checking.discard(project_ref)

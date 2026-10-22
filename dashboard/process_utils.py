@@ -25,11 +25,13 @@ def hidden_process_kwargs(*, new_process_group: bool = False) -> dict[str, Any]:
 
 
 def noninteractive_git_environment() -> dict[str, str]:
-    """Return a Git environment that cannot open credential or terminal prompts."""
+    """Disable supported Git/GCM prompt paths without changing user Git config."""
     return {
         **os.environ,
         "GIT_TERMINAL_PROMPT": "0",
         "GIT_OPTIONAL_LOCKS": "0",
         "GCM_INTERACTIVE": "Never",
         "GCM_MODAL_PROMPT": "0",
+        "GIT_ASKPASS": "",
+        "SSH_ASKPASS_REQUIRE": "never",
     }

@@ -251,7 +251,9 @@ def synthetic_repository_check(target, repository):
 
 with mock.patch.object(repository_status, "inspect_repository", side_effect=synthetic_repository_check):
     metadata = {"url": "https://example.invalid/repository.git", "branch": "main", "remote": "origin"}
-    assert monitor.status("single-flight", ROOT, metadata)["state"] == "checking"
+    assert monitor.status("single-flight", ROOT, metadata)["state"] == "unchecked"
+    assert calls == []
+    assert monitor.status("single-flight", ROOT, metadata, force=True)["state"] == "checking"
     assert monitor.status("single-flight", ROOT, metadata)["state"] == "checking"
     release_check.set()
     assert check_finished.wait(timeout=2)
@@ -274,7 +276,10 @@ def synthetic_startup_check(target, repository):
 
 with mock.patch.object(repository_status, "inspect_repository", side_effect=synthetic_startup_check):
     metadata = {"url": "https://example.invalid/repository.git", "branch": "main", "remote": "origin"}
-    assert startup_only_monitor.status("startup-only", ROOT, metadata)["state"] == "checking"
+    for _ in range(10):
+        assert startup_only_monitor.status("startup-only", ROOT, metadata)["state"] == "unchecked"
+    assert startup_calls == []
+    assert startup_only_monitor.status("startup-only", ROOT, metadata, force=True)["state"] == "checking"
     assert startup_check_finished.wait(timeout=2)
     for _ in range(100):
         observed = startup_only_monitor.status("startup-only", ROOT, metadata)
@@ -285,7 +290,7 @@ with mock.patch.object(repository_status, "inspect_repository", side_effect=synt
         startup_only_monitor.status("startup-only", ROOT, metadata)
         threading.Event().wait(0.01)
     assert observed["state"] == "current" and len(startup_calls) == 1
-print("OK: zero repository interval checks once at startup only")
+print("OK: status observation never runs Git; explicit refresh is cached")
 
 refresh_started = threading.Event()
 release_refresh = threading.Event()
@@ -308,6 +313,19 @@ with mock.patch.object(repository_status, "inspect_repository", side_effect=synt
         threading.Event().wait(0.01)
     assert refreshed["state"] == "update_available" and refreshed["refreshing"] is False
 print("OK: explicit repository refresh reports progress and replaces the cached result")
+
+with mock.patch.object(repository_status, "inspect_repository", side_effect=RuntimeError("fixture")):
+    startup_only_monitor.checking.add("failure-fixture")
+    startup_only_monitor._check("failure-fixture", ROOT, metadata)
+assert "failure-fixture" not in startup_only_monitor.checking
+assert startup_only_monitor.results["failure-fixture"]["state"] == "unavailable"
+with mock.patch.dict(process_utils.os.environ, {"GIT_ASKPASS": "interactive-helper"}):
+    assert process_utils.noninteractive_git_environment()["GIT_ASKPASS"] == ""
+with mock.patch.object(repository_status.subprocess, "run") as quiet_git:
+    repository_status._run_git(ROOT, ["status"])
+assert "core.askPass=" in quiet_git.call_args.args[0]
+assert quiet_git.call_args.kwargs["stdin"] == subprocess.DEVNULL
+print("OK: prompt suppression and failed-check retry state")
 
 if sys.platform == "win32":
     completed = subprocess.CompletedProcess(["git"], 0, stdout="", stderr="")
